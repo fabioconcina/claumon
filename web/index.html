@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>claumon — Claude Code Dashboard</title>
+<link id="favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%238fbc8f'/></svg>">
 <style>
 :root {
   --bg: #1a1a1a;
@@ -801,14 +802,28 @@ function updateGauge(id, pct, resetStr) {
   if (resetEl) resetEl.textContent = resetStr ? 'Reset: ' + resetStr : '';
 }
 
+function updatePageTitle(sessionPct) {
+  if (sessionPct > 0) {
+    document.title = Math.round(sessionPct) + '% | claumon';
+  } else {
+    document.title = 'claumon — Claude Code Dashboard';
+  }
+  // Update favicon color to match usage level
+  const color = sessionPct >= 80 ? '%23d95f5f' : sessionPct >= 50 ? '%23e8c872' : '%238fbc8f';
+  document.getElementById('favicon').href =
+    "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='" + color + "'/></svg>";
+}
+
 function updateUsageGauges(data) {
   if (data.available === false) {
     updateGauge('session', 0, 'No data');
     updateGauge('weekly', 0, 'No data');
+    updatePageTitle(0);
     return;
   }
   updateGauge('session', data.session_pct || 0, data.session_reset || '');
   updateGauge('weekly', data.weekly_pct || 0, data.weekly_reset || '');
+  updatePageTitle(data.session_pct || 0);
 
   // Opus gauge
   const opusCard = document.getElementById('gauge-opus-card');

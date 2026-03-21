@@ -4,13 +4,16 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -77,6 +80,8 @@ var version = "dev"
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	openBrowser := flag.Bool("open", false, "Open dashboard in browser on startup")
+	flag.Parse()
 	cfg := loadConfig()
 
 	log.Printf("claumon starting — port=%d claude_dir=%s", cfg.Port, cfg.ClaudeDir)
@@ -163,12 +168,23 @@ func main() {
 		Handler: srv.Mux,
 	}
 
+	dashboardURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	go func() {
-		log.Printf("Dashboard available at http://localhost:%d", cfg.Port)
+		log.Printf("Dashboard available at %s", dashboardURL)
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
+
+	if *openBrowser {
+		// Small delay to let the server start, then open browser
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			if err := openURL(dashboardURL); err != nil {
+				log.Printf("Failed to open browser: %v", err)
+			}
+		}()
+	}
 
 	// Wait for shutdown signal
 	sigCh := make(chan os.Signal, 1)
@@ -354,4 +370,17 @@ func backfillHistory(claudeDir string, st *store.Store) {
 	}
 
 	log.Printf("[backfill] Done: %d days from %d sessions", count, len(sessions))
+}
+
+func openURL(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Run()
+	case "linux":
+		return exec.Command("xdg-open", url).Run()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Run()
+	default:
+		return fmt.Errorf("unsupported platform %s", runtime.GOOS)
+	}
 }
