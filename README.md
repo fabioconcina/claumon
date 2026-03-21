@@ -98,6 +98,14 @@ Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
 - **Clickable legend** — toggle node types on/off
 - **Click to navigate** — click a node to jump to its file in the memory browser
 
+## Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `1` `2` `3` | Switch to Dashboard, Memories, Graph tab |
+| `/` | Jump to memory search |
+| `Esc` | Close session detail panel |
+
 ## Live updates
 
 The dashboard uses Server-Sent Events (SSE) — no polling, no manual refresh. Changes appear instantly:
