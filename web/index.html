@@ -757,7 +757,7 @@ function fmtNum(n) {
   if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
   return n.toString();
 }
-function fmtCost(n) { return '$' + n.toFixed(4); }
+function fmtCost(n) { return '$' + n.toFixed(1); }
 function fmtTimeAgo(ts) {
   const d = new Date(ts);
   const diff = Date.now() - d.getTime();
