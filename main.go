@@ -182,27 +182,38 @@ func main() {
 }
 
 func pollUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, interval time.Duration) {
-	// Initial fetch
-	fetchAndBroadcastUsage(ctx, client, st, broker, handlers)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	// Initial fetch with a small delay to avoid hitting the API immediately on every restart
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(5 * time.Second):
+	}
+	backoff := interval
+	if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
+		backoff = interval * 3
+		log.Printf("[poll] Backing off to %v", backoff)
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			fetchAndBroadcastUsage(ctx, client, st, broker, handlers)
+		case <-time.After(backoff):
+			if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
+				backoff = min(backoff*2, 10*time.Minute)
+				log.Printf("[poll] Backing off to %v", backoff)
+			} else {
+				backoff = interval
+			}
 		}
 	}
 }
 
-func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers) {
+func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers) error {
 	usage, err := client.FetchUsage(ctx)
 	if err != nil {
 		log.Printf("[poll] Usage fetch error: %v", err)
-		return
+		return err
 	}
 
 	// Save snapshot
@@ -236,6 +247,7 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 	broker.Send(server.SSEEvent{Event: "usage", Data: string(data)})
 	handlers.SetLatestUsage(evt)
 	log.Printf("[poll] Usage: session=%.1f%% weekly=%.1f%%", usage.SessionPercent, usage.WeeklyPercent)
+	return nil
 }
 
 func parseDuration(s string) time.Duration {

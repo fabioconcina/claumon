@@ -89,6 +89,10 @@ func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := resp.Header.Get("Retry-After")
+		if retryAfter != "" {
+			return nil, fmt.Errorf("usage API rate limited (429), retry after %s", retryAfter)
+		}
 		return nil, fmt.Errorf("usage API rate limited (429)")
 	}
 
