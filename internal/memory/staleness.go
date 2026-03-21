@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type MarkdownLink struct {
+type markdownLink struct {
 	Text string
 	Href string
 }
@@ -30,12 +30,12 @@ type StalenessReport struct {
 
 var mdLinkRegex = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+\.md)\)`)
 
-// ExtractMarkdownLinks parses markdown link references to .md files from content.
-func ExtractMarkdownLinks(content string) []MarkdownLink {
+// extractMarkdownLinks parses markdown link references to .md files from content.
+func extractMarkdownLinks(content string) []markdownLink {
 	matches := mdLinkRegex.FindAllStringSubmatch(content, -1)
-	var links []MarkdownLink
+	var links []markdownLink
 	for _, m := range matches {
-		links = append(links, MarkdownLink{Text: m[1], Href: m[2]})
+		links = append(links, markdownLink{Text: m[1], Href: m[2]})
 	}
 	return links
 }
@@ -68,7 +68,7 @@ func checkBrokenLinks(files []*MemoryFile) []StalenessAlert {
 			continue
 		}
 		dir := filepath.Dir(f.Path)
-		for _, link := range ExtractMarkdownLinks(f.Content) {
+		for _, link := range extractMarkdownLinks(f.Content) {
 			target := filepath.Join(dir, link.Href)
 			if knownPaths[target] {
 				continue
@@ -99,7 +99,7 @@ func checkOrphanedFiles(files []*MemoryFile) []StalenessAlert {
 			continue
 		}
 		dir := filepath.Dir(f.Path)
-		for _, link := range ExtractMarkdownLinks(f.Content) {
+		for _, link := range extractMarkdownLinks(f.Content) {
 			referenced[filepath.Join(dir, link.Href)] = true
 		}
 	}
@@ -140,7 +140,7 @@ func checkIndexMismatch(files []*MemoryFile) []StalenessAlert {
 		switch f.Category {
 		case "auto-memory":
 			projects[key].indexFile = f
-			projects[key].indexLinks = len(ExtractMarkdownLinks(f.Content))
+			projects[key].indexLinks = len(extractMarkdownLinks(f.Content))
 		case "memory-file":
 			projects[key].fileCount++
 		}

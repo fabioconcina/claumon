@@ -321,6 +321,7 @@ func toStoreAggregate(date string, sessions []*parser.SessionSummary) store.Dail
 func updateDailyAggregate(claudeDir string, st *store.Store) {
 	sessions, err := parser.DiscoverTodaySessions(claudeDir)
 	if err != nil {
+		log.Printf("[aggregate] Failed to discover today's sessions: %v", err)
 		return
 	}
 	if err := st.UpsertDailyAggregate(toStoreAggregate(time.Now().Format("2006-01-02"), sessions)); err != nil {

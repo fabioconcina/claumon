@@ -203,6 +203,7 @@ func saveCache(models map[string]ModelPricing) {
 	}
 	data, err := json.MarshalIndent(pf, "", "  ")
 	if err != nil {
+		log.Printf("[pricing] Failed to marshal cache data: %v", err)
 		return
 	}
 

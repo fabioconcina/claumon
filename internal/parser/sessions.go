@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -78,7 +79,7 @@ type jsonlLine struct {
 func ParseSessionFile(path string) (*SessionSummary, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening session file: %w", err)
 	}
 	defer f.Close()
 
@@ -152,7 +153,10 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 	}
 
 	summary.EstimatedCostUSD = estimateCost(summary)
-	return summary, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanning session file: %w", err)
+	}
+	return summary, nil
 }
 
 // SetPricingTable sets the shared pricing table used for cost estimation.
@@ -258,7 +262,7 @@ func DiscoverTodaySessions(claudeDir string) ([]*SessionSummary, error) {
 func ParseSessionDetail(path string) ([]SessionMessage, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening session file: %w", err)
 	}
 	defer f.Close()
 
@@ -312,7 +316,10 @@ func ParseSessionDetail(path string) ([]SessionMessage, error) {
 		}
 	}
 
-	return messages, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanning session detail: %w", err)
+	}
+	return messages, nil
 }
 
 // FindSessionFile finds the JSONL file for a session ID.
@@ -336,13 +343,13 @@ func FindSessionFile(claudeDir, sessionID string) string {
 
 // SessionAggregate holds aggregated token counts and cost across sessions.
 type SessionAggregate struct {
-	InputTokens       int
-	OutputTokens      int
-	CacheReadTokens   int
-	CacheCreateTokens int
-	CostUSD           float64
-	SessionCount      int
-	MessageCount      int
+	InputTokens       int     `json:"input_tokens"`
+	OutputTokens      int     `json:"output_tokens"`
+	CacheReadTokens   int     `json:"cache_read_tokens"`
+	CacheCreateTokens int     `json:"cache_create_tokens"`
+	CostUSD           float64 `json:"cost_usd"`
+	SessionCount      int     `json:"session_count"`
+	MessageCount      int     `json:"message_count"`
 }
 
 // AggregateSessions sums token counts, costs, and session/message counts.

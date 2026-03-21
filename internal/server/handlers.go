@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -14,7 +15,7 @@ import (
 type Handlers struct {
 	claudeDir        string
 	store            *store.Store
-	memories         *MemoryCache
+	memories         *memoryCache
 	usageMu          sync.RWMutex
 	latestUsage      map[string]interface{}
 	Version          string
@@ -22,7 +23,7 @@ type Handlers struct {
 	RateLimitTier    string
 }
 
-type MemoryCache struct {
+type memoryCache struct {
 	files         []*memory.MemoryFile
 	staleness     *memory.StalenessReport
 	graph         *memory.GraphData
@@ -33,7 +34,7 @@ func NewHandlers(claudeDir string, st *store.Store) *Handlers {
 	h := &Handlers{
 		claudeDir: claudeDir,
 		store:     st,
-		memories:  &MemoryCache{},
+		memories:  &memoryCache{},
 	}
 	h.RefreshMemories()
 	return h
@@ -41,12 +42,14 @@ func NewHandlers(claudeDir string, st *store.Store) *Handlers {
 
 func (h *Handlers) RefreshMemories() {
 	files, err := memory.DiscoverAll(h.claudeDir)
-	if err == nil {
-		h.memories.files = files
-		h.memories.staleness = memory.CheckStaleness(files)
-		h.memories.graph = memory.BuildGraph(files)
-		h.memories.consolidation = memory.FindConsolidation(files)
+	if err != nil {
+		log.Printf("[memory] Failed to discover memories: %v", err)
+		return
 	}
+	h.memories.files = files
+	h.memories.staleness = memory.CheckStaleness(files)
+	h.memories.graph = memory.BuildGraph(files)
+	h.memories.consolidation = memory.FindConsolidation(files)
 }
 
 func (h *Handlers) SetLatestUsage(data map[string]interface{}) {
@@ -75,20 +78,10 @@ func (h *Handlers) HandleToday(w http.ResponseWriter, r *http.Request) {
 	// Compute from session files for freshest data
 	sessions, err := parser.DiscoverTodaySessions(h.claudeDir)
 	if err != nil {
-		writeJSON(w, store.DailyAggregate{})
+		writeJSON(w, parser.SessionAggregate{})
 		return
 	}
-
-	a := parser.AggregateSessions(sessions)
-	writeJSON(w, store.DailyAggregate{
-		InputTokens:       a.InputTokens,
-		OutputTokens:      a.OutputTokens,
-		CacheReadTokens:   a.CacheReadTokens,
-		CacheCreateTokens: a.CacheCreateTokens,
-		CostUSD:           a.CostUSD,
-		SessionCount:      a.SessionCount,
-		MessageCount:      a.MessageCount,
-	})
+	writeJSON(w, parser.AggregateSessions(sessions))
 }
 
 func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +116,11 @@ func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, h.memories.files)
+	files := h.memories.files
+	if files == nil {
+		files = []*memory.MemoryFile{}
+	}
+	writeJSON(w, files)
 }
 
 func (h *Handlers) HandleMemoriesStaleness(w http.ResponseWriter, r *http.Request) {

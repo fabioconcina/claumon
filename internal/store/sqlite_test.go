@@ -69,18 +69,6 @@ func TestUpsertOverwrites(t *testing.T) {
 	}
 }
 
-func TestGetTodaySummaryEmpty(t *testing.T) {
-	st := openTestStore(t)
-
-	summary, err := st.GetTodaySummary()
-	if err != nil {
-		t.Fatalf("GetTodaySummary: %v", err)
-	}
-	if summary.InputTokens != 0 {
-		t.Errorf("expected 0 input tokens for empty day, got %d", summary.InputTokens)
-	}
-}
-
 func TestSaveUsageSnapshot(t *testing.T) {
 	st := openTestStore(t)
 

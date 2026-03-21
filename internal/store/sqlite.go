@@ -74,7 +74,10 @@ func migrate(db *sql.DB) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON usage_snapshots(timestamp);
 	`)
-	return err
+	if err != nil {
+		return fmt.Errorf("running migrations: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Close() error {
@@ -87,7 +90,10 @@ func (s *Store) SaveUsageSnapshot(sessionPct, weeklyPct float64, sessionReset, w
 		 VALUES (?, ?, ?, ?, ?)`,
 		sessionPct, weeklyPct, sessionReset, weeklyReset, string(rawJSON),
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("saving usage snapshot: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) UpsertDailyAggregate(agg DailyAggregate) error {
@@ -103,7 +109,10 @@ func (s *Store) UpsertDailyAggregate(agg DailyAggregate) error {
 			session_count = excluded.session_count,
 			message_count = excluded.message_count
 	`, agg.Date, agg.InputTokens, agg.OutputTokens, agg.CacheReadTokens, agg.CacheCreateTokens, agg.CostUSD, agg.SessionCount, agg.MessageCount)
-	return err
+	if err != nil {
+		return fmt.Errorf("upserting daily aggregate for %s: %w", agg.Date, err)
+	}
+	return nil
 }
 
 func (s *Store) GetHistory(days int) ([]DailyAggregate, error) {
@@ -113,7 +122,7 @@ func (s *Store) GetHistory(days int) ([]DailyAggregate, error) {
 		 FROM daily_aggregates WHERE date >= ? ORDER BY date ASC`, since,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying history: %w", err)
 	}
 	defer rows.Close()
 
@@ -121,26 +130,12 @@ func (s *Store) GetHistory(days int) ([]DailyAggregate, error) {
 	for rows.Next() {
 		var a DailyAggregate
 		if err := rows.Scan(&a.Date, &a.InputTokens, &a.OutputTokens, &a.CacheReadTokens, &a.CacheCreateTokens, &a.CostUSD, &a.SessionCount, &a.MessageCount); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning history row: %w", err)
 		}
 		result = append(result, a)
 	}
-	return result, rows.Err()
-}
-
-func (s *Store) GetTodaySummary() (*DailyAggregate, error) {
-	today := time.Now().Format("2006-01-02")
-	var a DailyAggregate
-	err := s.db.QueryRow(
-		`SELECT date, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, cost_usd, session_count, message_count
-		 FROM daily_aggregates WHERE date = ?`, today,
-	).Scan(&a.Date, &a.InputTokens, &a.OutputTokens, &a.CacheReadTokens, &a.CacheCreateTokens, &a.CostUSD, &a.SessionCount, &a.MessageCount)
-	if err == sql.ErrNoRows {
-		return &DailyAggregate{Date: today}, nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating history rows: %w", err)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &a, nil
+	return result, nil
 }
-

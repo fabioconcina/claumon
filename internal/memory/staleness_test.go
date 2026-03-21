@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-func TestExtractMarkdownLinks(t *testing.T) {
+func TestExtractLinks(t *testing.T) {
 	content := `# Index
 - [User prefs](user_prefs.md) — user preferences
 - [Feedback](feedback_testing.md) — testing feedback
 - Not a link
 - [Readme](README.md) — readme
 `
-	links := ExtractMarkdownLinks(content)
+	links := extractMarkdownLinks(content)
 	if len(links) != 3 {
-		t.Fatalf("ExtractMarkdownLinks() found %d links, want 3", len(links))
+		t.Fatalf("extractLinks() found %d links, want 3", len(links))
 	}
 
 	expected := []struct{ text, href string }{
@@ -30,8 +30,8 @@ func TestExtractMarkdownLinks(t *testing.T) {
 	}
 }
 
-func TestExtractMarkdownLinksNoLinks(t *testing.T) {
-	links := ExtractMarkdownLinks("No links here at all.")
+func TestExtractLinksNoLinks(t *testing.T) {
+	links := extractMarkdownLinks("No links here at all.")
 	if len(links) != 0 {
 		t.Errorf("expected 0 links, got %d", len(links))
 	}
