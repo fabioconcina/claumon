@@ -8,23 +8,8 @@ import (
 
 func loadFromOSCredentialStore() ([]byte, error) {
 	// VS Code stores credentials in Windows Credential Manager.
-	// Use PowerShell to read it since there's no simple CLI like `security` on macOS.
+	// Use PowerShell with direct CredRead via P/Invoke to read them.
 	script := `
-$cred = Get-StoredCredential -Target "Claude Code-credentials" -ErrorAction SilentlyContinue
-if ($cred) { [System.Net.NetworkCredential]::new('', $cred.Password).Password }
-else {
-  # Fall back to cmdkey/CredRead via .NET
-  Add-Type -AssemblyName System.Runtime.InteropServices
-  $bytes = [System.Text.Encoding]::Unicode.GetBytes((cmdkey /generic:"Claude Code-credentials" /pass 2>$null))
-  # Try direct CredentialManager module approach
-  $vault = New-Object Windows.Security.Credentials.PasswordVault
-  $entry = $vault.Retrieve("Claude Code-credentials", "")
-  $entry.RetrievePassword()
-  $entry.Password
-}
-`
-	// Simpler approach: use PowerShell CredentialManager or direct registry
-	simpleScript := `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -55,7 +40,7 @@ public class CredManager {
 [CredManager]::Read("Claude Code-credentials")
 `
 
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", simpleScript).Output()
+	out, err := exec.Command("powershell", "-NoProfile", "-Command", script).Output()
 	if err != nil {
 		return nil, fmt.Errorf("Windows Credential Manager lookup failed: %w", err)
 	}
