@@ -171,7 +171,7 @@ func main() {
 	log.Println("Shutting down...")
 	cancel()
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer shutdownCancel()
 	httpServer.Shutdown(shutdownCtx)
 

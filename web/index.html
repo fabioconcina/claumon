@@ -1481,7 +1481,9 @@ function renderGraphView() {
   // Layout
   const cw = canvas.clientWidth || canvas.parentElement.clientWidth || document.querySelector('.content').clientWidth;
   const width = Math.max(cw - 32, 600);
-  const height = 650;
+  const groupCount = new Set(filteredNodes.map(n => n.project)).size;
+  const gridRows = Math.ceil(groupCount / Math.ceil(Math.sqrt(groupCount)));
+  const height = Math.max(400, gridRows * 180);
   const nodes = filteredNodes.map(n => ({ ...n, x: 0, y: 0, vx: 0, vy: 0 }));
   const nodeMap = {};
   nodes.forEach(n => { nodeMap[n.id] = n; });
@@ -1491,7 +1493,7 @@ function renderGraphView() {
   // Render SVG
   let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
 
-  // Group backgrounds
+  // Group backgrounds — grid cells
   const groupNodes = {};
   nodes.forEach(n => {
     const key = n.project || '__global__';
@@ -1499,8 +1501,8 @@ function renderGraphView() {
     groupNodes[key].push(n);
   });
 
-  const groupColors = ['rgba(218,119,86,0.06)', 'rgba(125,191,184,0.06)', 'rgba(184,154,218,0.06)',
-    'rgba(232,200,114,0.06)', 'rgba(143,188,143,0.06)', 'rgba(217,95,95,0.06)'];
+  const groupColors = ['rgba(218,119,86,0.08)', 'rgba(125,191,184,0.08)', 'rgba(184,154,218,0.08)',
+    'rgba(232,200,114,0.08)', 'rgba(143,188,143,0.08)', 'rgba(217,95,95,0.08)'];
   let gi = 0;
   for (const key in groupNodes) {
     const gn = groupNodes[key];
@@ -1510,11 +1512,11 @@ function renderGraphView() {
       minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
     });
-    const pad = 45;
+    const padX = 55, padY = 40;
     const gLabel = key === '__global__' ? 'Global' : key.split('/').pop();
-    svg += `<rect x="${minX-pad}" y="${minY-pad}" width="${maxX-minX+pad*2}" height="${maxY-minY+pad*2+20}"
-      rx="12" fill="${groupColors[gi % groupColors.length]}" stroke="${groupColors[gi % groupColors.length].replace('0.06','0.15')}" stroke-width="1"/>`;
-    svg += `<text x="${minX-pad+10}" y="${minY-pad+16}" font-size="11" fill="var(--text-dim)" opacity="0.6">${escHtml(gLabel)}</text>`;
+    svg += `<rect x="${minX-padX}" y="${minY-padY}" width="${maxX-minX+padX*2}" height="${maxY-minY+padY*2+20}"
+      rx="12" fill="${groupColors[gi % groupColors.length]}" stroke="${groupColors[gi % groupColors.length].replace('0.08','0.2')}" stroke-width="1"/>`;
+    svg += `<text x="${minX-padX+10}" y="${minY-padY+16}" font-size="11" fill="var(--text-dim)" opacity="0.7">${escHtml(gLabel)}</text>`;
     gi++;
   }
 
@@ -1633,116 +1635,34 @@ function layoutGraph(nodes, edges, width, height, nodeMap) {
   if (nodes.length === 0) return;
   if (nodes.length === 1) { nodes[0].x = width/2; nodes[0].y = height/2; return; }
 
-  const area = width * height;
-  const k = Math.sqrt(area / nodes.length) * 1.2;
-  const iterations = 300;
-  let temperature = Math.min(width, height) / 2;
-  const margin = 80;
-
-  // Seed positions by group — spread groups across the canvas
+  // Deterministic grid layout: place groups in grid cells, nodes in a row within each cell
   const groupList = [...new Set(nodes.map(n => n.project || '__global__'))];
-  const groupCenters = {};
-  const spreadX = width * 0.35;
-  const spreadY = height * 0.35;
+  const cols = Math.ceil(Math.sqrt(groupList.length));
+  const rows = Math.ceil(groupList.length / cols);
+  const gap = 24;
+  const cellW = (width - gap * (cols + 1)) / cols;
+  const cellH = (height - gap * (rows + 1)) / rows;
+  const nodeSpacing = 90;
+
+  // Group nodes by project
+  const groupedNodes = {};
+  groupList.forEach(g => { groupedNodes[g] = []; });
+  nodes.forEach(n => { groupedNodes[n.project || '__global__'].push(n); });
+
   groupList.forEach((g, i) => {
-    const angle = (2 * Math.PI * i) / groupList.length;
-    groupCenters[g] = {
-      x: width/2 + spreadX * Math.cos(angle),
-      y: height/2 + spreadY * Math.sin(angle)
-    };
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cellX = gap + col * (cellW + gap);
+    const cellY = gap + row * (cellH + gap);
+    const cellCX = cellX + cellW / 2;
+    const cellCY = cellY + cellH / 2;
+    const gNodes = groupedNodes[g];
+    const totalW = (gNodes.length - 1) * nodeSpacing;
+    gNodes.forEach((n, j) => {
+      n.x = cellCX - totalW / 2 + j * nodeSpacing;
+      n.y = cellCY;
+    });
   });
-
-  nodes.forEach(n => {
-    const c = groupCenters[n.project || '__global__'];
-    n.x = c.x + (Math.random() - 0.5) * k;
-    n.y = c.y + (Math.random() - 0.5) * k;
-  });
-
-  for (let iter = 0; iter < iterations; iter++) {
-    // Repulsive forces (all pairs)
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        let dx = nodes[i].x - nodes[j].x;
-        let dy = nodes[i].y - nodes[j].y;
-        const dist = Math.max(Math.sqrt(dx*dx + dy*dy), 0.1);
-        const force = (k * k) / dist;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        nodes[i].vx += fx; nodes[i].vy += fy;
-        nodes[j].vx -= fx; nodes[j].vy -= fy;
-      }
-    }
-
-    // Attractive forces along edges
-    edges.forEach(e => {
-      const s = nodeMap[e.source], t = nodeMap[e.target];
-      if (!s || !t) return;
-      const dx = s.x - t.x;
-      const dy = s.y - t.y;
-      const dist = Math.max(Math.sqrt(dx*dx + dy*dy), 0.1);
-      const strength = e.type === 'cross-project' ? 0.1 : 1.0;
-      const force = (dist / k) * strength;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      s.vx -= fx; s.vy -= fy;
-      t.vx += fx; t.vy += fy;
-    });
-
-    // Group cohesion
-    nodes.forEach(n => {
-      const c = groupCenters[n.project || '__global__'];
-      n.vx += (c.x - n.x) * 0.05;
-      n.vy += (c.y - n.y) * 0.05;
-    });
-
-    // Center gravity
-    nodes.forEach(n => {
-      n.vx += (width/2 - n.x) * 0.002;
-      n.vy += (height/2 - n.y) * 0.002;
-    });
-
-    // Apply velocities with temperature limiting
-    nodes.forEach(n => {
-      const disp = Math.sqrt(n.vx*n.vx + n.vy*n.vy);
-      if (disp > 0) {
-        const capped = Math.min(disp, temperature);
-        n.x += (n.vx / disp) * capped;
-        n.y += (n.vy / disp) * capped;
-      }
-      n.x = Math.max(margin, Math.min(width - margin, n.x));
-      n.y = Math.max(margin, Math.min(height - margin, n.y));
-      n.vx = 0; n.vy = 0;
-    });
-
-    temperature *= 0.97;
-  }
-
-  // Post-layout: resolve label overlaps by nudging close nodes apart
-  const minDist = 50; // minimum distance between node centers
-  for (let pass = 0; pass < 20; pass++) {
-    let moved = false;
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        let dx = nodes[i].x - nodes[j].x;
-        let dy = nodes[i].y - nodes[j].y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < minDist && dist > 0) {
-          const push = (minDist - dist) / 2 + 1;
-          const nx = (dx / dist) * push;
-          const ny = (dy / dist) * push;
-          nodes[i].x += nx; nodes[i].y += ny;
-          nodes[j].x -= nx; nodes[j].y -= ny;
-          // Clamp
-          nodes[i].x = Math.max(margin, Math.min(width - margin, nodes[i].x));
-          nodes[i].y = Math.max(margin, Math.min(height - margin, nodes[i].y));
-          nodes[j].x = Math.max(margin, Math.min(width - margin, nodes[j].x));
-          nodes[j].y = Math.max(margin, Math.min(height - margin, nodes[j].y));
-          moved = true;
-        }
-      }
-    }
-    if (!moved) break;
-  }
 }
 
 // --- Data Fetching ---

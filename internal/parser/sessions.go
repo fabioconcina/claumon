@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -145,9 +146,9 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 		}
 	}
 
-	// Fallback title: first user message, truncated
+	// Fallback title: first user message, stripped of XML tags, truncated
 	if summary.Title == "" && firstUserMsg != "" {
-		summary.Title = truncate(firstUserMsg, 80)
+		summary.Title = truncate(stripXMLTags(firstUserMsg), 80)
 	}
 
 	summary.EstimatedCostUSD = estimateCost(summary)
@@ -365,6 +366,18 @@ func extractToolUse(content json.RawMessage) string {
 		return strings.Join(tools, ", ")
 	}
 	return ""
+}
+
+var xmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+// stripXMLTags removes XML/HTML tags and their content when the tag wraps the entire
+// line (like <ide_opened_file>...</ide_opened_file>), then removes any remaining tags.
+func stripXMLTags(s string) string {
+	// Remove full tagged lines (e.g. "<ide_opened_file>...text...</ide_opened_file>")
+	s = regexp.MustCompile(`(?m)^<\w[^>]*>.*?</\w+>\s*`).ReplaceAllString(s, "")
+	// Remove any remaining tags
+	s = xmlTagRe.ReplaceAllString(s, "")
+	return strings.TrimSpace(s)
 }
 
 func truncate(s string, maxLen int) string {

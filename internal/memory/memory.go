@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,6 +31,25 @@ var md = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
 	goldmark.WithRendererOptions(html.WithHardWraps()),
 )
+
+var localLinkRe = regexp.MustCompile(`href="([^"]*\.md)"`)
+
+// rewriteLocalLinks converts relative .md links in rendered HTML to vscode:// URLs.
+func rewriteLocalLinks(html, dir string) string {
+	return localLinkRe.ReplaceAllStringFunc(html, func(match string) string {
+		sub := localLinkRe.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		href := sub[1]
+		// Skip already-absolute URLs
+		if strings.HasPrefix(href, "http") || strings.HasPrefix(href, "vscode") {
+			return match
+		}
+		abs := filepath.Join(dir, href)
+		return `href="vscode://file/` + abs + `"`
+	})
+}
 
 func RenderMarkdown(source string) string {
 	var buf bytes.Buffer
@@ -168,7 +188,8 @@ func readMemoryFile(path, project, category string) *MemoryFile {
 	fmName, fmDesc, fmType, body := parseFrontmatter(content)
 
 	// Render only the body (without frontmatter) as HTML
-	htmlContent := RenderMarkdown(body)
+	dir := filepath.Dir(path)
+	htmlContent := rewriteLocalLinks(RenderMarkdown(body), dir)
 
 	return &MemoryFile{
 		Path:          path,
