@@ -36,9 +36,6 @@ func TestParse(t *testing.T) {
 	if creds.RateLimitTier != "tier1" {
 		t.Errorf("RateLimitTier = %q, want %q", creds.RateLimitTier, "tier1")
 	}
-	if creds.OrgUUID != "org-789" {
-		t.Errorf("OrgUUID = %q, want %q", creds.OrgUUID, "org-789")
-	}
 }
 
 func TestParseNoAccessToken(t *testing.T) {

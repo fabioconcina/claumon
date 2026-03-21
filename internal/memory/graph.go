@@ -66,10 +66,7 @@ func BuildGraph(files []*MemoryFile) *GraphData {
 	}
 
 	// Index-link edges: MEMORY.md -> referenced files
-	knownPaths := make(map[string]bool, len(files))
-	for _, f := range files {
-		knownPaths[f.Path] = true
-	}
+	knownPaths := pathIndex(files)
 	for _, f := range files {
 		if f.Category != "auto-memory" {
 			continue

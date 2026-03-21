@@ -40,10 +40,6 @@ type SessionSummary struct {
 	CWD               string    `json:"cwd"`
 }
 
-func (s *SessionSummary) TotalTokens() int {
-	return s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheCreateTokens
-}
-
 // SessionMessage represents a single parsed message from a session for the detail view.
 type SessionMessage struct {
 	Type      string    `json:"type"`

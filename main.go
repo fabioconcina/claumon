@@ -59,7 +59,7 @@ func loadConfig() Config {
 		return cfg
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Printf("WARNING: Failed to parse config file: %v (using defaults)", err)
+		log.Printf("[config] Failed to parse config file: %v (using defaults)", err)
 		return cfg
 	}
 
@@ -97,8 +97,8 @@ func main() {
 	// Load credentials
 	creds, err := auth.Load(cfg.ClaudeDir, cfg.CredentialsPath)
 	if err != nil {
-		log.Printf("WARNING: Could not load credentials: %v", err)
-		log.Printf("Usage API will be unavailable. Run 'claude /login' to authenticate.")
+		log.Printf("[auth] Could not load credentials: %v", err)
+		log.Printf("[auth] Usage API will be unavailable. Run 'claude /login' to authenticate.")
 		creds = &auth.Credentials{}
 	} else {
 		log.Printf("Loaded credentials: subscription=%s tier=%s", creds.SubscriptionType, creds.RateLimitTier)
@@ -135,7 +135,7 @@ func main() {
 	// Start file watcher
 	w, err := watcher.New(cfg.ClaudeDir)
 	if err != nil {
-		log.Printf("WARNING: File watcher failed to start: %v", err)
+		log.Printf("[watcher] Failed to start: %v", err)
 	} else {
 		w.OnSessionChange(func(path string) {
 			log.Printf("[watcher] Session changed: %s", filepath.Base(path))
@@ -198,7 +198,7 @@ func main() {
 		go func() {
 			time.Sleep(300 * time.Millisecond)
 			if err := openURL(dashboardURL); err != nil {
-				log.Printf("Failed to open browser: %v", err)
+				log.Printf("[browser] Failed to open: %v", err)
 			}
 		}()
 	}
@@ -262,6 +262,15 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 	}
 
 	// Broadcast to SSE clients
+	evt := buildUsageEvent(usage)
+	data, _ := json.Marshal(evt)
+	broker.Send(server.SSEEvent{Event: "usage", Data: string(data)})
+	handlers.SetLatestUsage(evt)
+	log.Printf("[poll] Usage: session=%.1f%% weekly=%.1f%%", usage.SessionPercent, usage.WeeklyPercent)
+	return nil
+}
+
+func buildUsageEvent(usage *api.UsageResponse) map[string]interface{} {
 	evt := map[string]interface{}{
 		"session_pct":   usage.SessionPercent,
 		"weekly_pct":    usage.WeeklyPercent,
@@ -285,11 +294,7 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 			evt["extra_usage_used"] = *usage.ExtraUsageUsed
 		}
 	}
-	data, _ := json.Marshal(evt)
-	broker.Send(server.SSEEvent{Event: "usage", Data: string(data)})
-	handlers.SetLatestUsage(evt)
-	log.Printf("[poll] Usage: session=%.1f%% weekly=%.1f%%", usage.SessionPercent, usage.WeeklyPercent)
-	return nil
+	return evt
 }
 
 func formatDuration(d time.Duration) string {

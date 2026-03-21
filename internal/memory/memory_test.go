@@ -18,9 +18,9 @@ func TestRenderMarkdown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := RenderMarkdown(tt.input)
+			got := renderMarkdown(tt.input)
 			if got != tt.want {
-				t.Errorf("RenderMarkdown(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("renderMarkdown(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

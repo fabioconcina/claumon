@@ -50,7 +50,7 @@ func rewriteLocalLinks(html, dir string) string {
 	})
 }
 
-func RenderMarkdown(source string) string {
+func renderMarkdown(source string) string {
 	var buf bytes.Buffer
 	if err := md.Convert([]byte(source), &buf); err != nil {
 		return "<pre>" + source + "</pre>"
@@ -188,7 +188,7 @@ func readMemoryFile(path, project, category string) *MemoryFile {
 
 	// Render only the body (without frontmatter) as HTML
 	dir := filepath.Dir(path)
-	htmlContent := rewriteLocalLinks(RenderMarkdown(body), dir)
+	htmlContent := rewriteLocalLinks(renderMarkdown(body), dir)
 
 	return &MemoryFile{
 		Path:          path,

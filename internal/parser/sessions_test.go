@@ -204,14 +204,3 @@ func TestParseSessionDetail(t *testing.T) {
 	}
 }
 
-func TestTotalTokens(t *testing.T) {
-	s := SessionSummary{
-		InputTokens:       100,
-		OutputTokens:      200,
-		CacheReadTokens:   300,
-		CacheCreateTokens: 400,
-	}
-	if got := s.TotalTokens(); got != 1000 {
-		t.Errorf("TotalTokens() = %d, want 1000", got)
-	}
-}

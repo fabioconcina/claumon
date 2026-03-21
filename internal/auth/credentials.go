@@ -14,7 +14,6 @@ type Credentials struct {
 	ExpiresAt        int64
 	SubscriptionType string
 	RateLimitTier    string
-	OrgUUID          string
 }
 
 type credentialsFile struct {
@@ -26,7 +25,6 @@ type credentialsFile struct {
 		SubscriptionType string   `json:"subscriptionType"`
 		RateLimitTier    string   `json:"rateLimitTier"`
 	} `json:"claudeAiOauth"`
-	OrganizationUuid string `json:"organizationUuid"`
 }
 
 func Load(claudeDir string, credentialsPath string) (*Credentials, error) {
@@ -38,7 +36,7 @@ func Load(claudeDir string, credentialsPath string) (*Credentials, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		// Fall back to OS credential store (VS Code extension stores credentials there)
-		log.Printf("Credentials file not found, trying OS credential store...")
+		log.Printf("[auth] Credentials file not found, trying OS credential store...")
 		data, err = loadFromOSCredentialStore()
 		if err != nil {
 			return nil, fmt.Errorf("no credentials file and OS credential store lookup failed: %w", err)
@@ -64,6 +62,5 @@ func parse(data []byte) (*Credentials, error) {
 		ExpiresAt:        f.ClaudeAiOauth.ExpiresAt,
 		SubscriptionType: f.ClaudeAiOauth.SubscriptionType,
 		RateLimitTier:    f.ClaudeAiOauth.RateLimitTier,
-		OrgUUID:          f.OrganizationUuid,
 	}, nil
 }

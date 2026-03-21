@@ -110,6 +110,10 @@ func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
 		return nil, fmt.Errorf("parsing usage response: %w", err)
 	}
 
+	return mapUsageResponse(raw, body), nil
+}
+
+func mapUsageResponse(raw rawUsageResponse, body []byte) *UsageResponse {
 	usage := &UsageResponse{
 		Raw: json.RawMessage(body),
 	}
@@ -146,7 +150,7 @@ func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
 		usage.ExtraUsageUsed = raw.ExtraUsage.UsedCredits
 	}
 
-	return usage, nil
+	return usage
 }
 
 // SessionResetDuration parses the session reset time and returns duration until reset.

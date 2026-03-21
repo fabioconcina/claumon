@@ -18,14 +18,10 @@ func TestExtractLinks(t *testing.T) {
 		t.Fatalf("extractLinks() found %d links, want 3", len(links))
 	}
 
-	expected := []struct{ text, href string }{
-		{"User prefs", "user_prefs.md"},
-		{"Feedback", "feedback_testing.md"},
-		{"Readme", "README.md"},
-	}
+	expected := []string{"user_prefs.md", "feedback_testing.md", "README.md"}
 	for i, want := range expected {
-		if links[i].Text != want.text || links[i].Href != want.href {
-			t.Errorf("link[%d] = {%q, %q}, want {%q, %q}", i, links[i].Text, links[i].Href, want.text, want.href)
+		if links[i].Href != want {
+			t.Errorf("link[%d].Href = %q, want %q", i, links[i].Href, want)
 		}
 	}
 }

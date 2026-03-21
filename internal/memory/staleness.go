@@ -9,7 +9,6 @@ import (
 )
 
 type markdownLink struct {
-	Text string
 	Href string
 }
 
@@ -28,6 +27,15 @@ type StalenessReport struct {
 	CheckedAt  int64            `json:"checked_at"`
 }
 
+// pathIndex builds a set of known file paths for quick lookup.
+func pathIndex(files []*MemoryFile) map[string]bool {
+	idx := make(map[string]bool, len(files))
+	for _, f := range files {
+		idx[f.Path] = true
+	}
+	return idx
+}
+
 var mdLinkRegex = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+\.md)\)`)
 
 // extractMarkdownLinks parses markdown link references to .md files from content.
@@ -35,7 +43,7 @@ func extractMarkdownLinks(content string) []markdownLink {
 	matches := mdLinkRegex.FindAllStringSubmatch(content, -1)
 	var links []markdownLink
 	for _, m := range matches {
-		links = append(links, markdownLink{Text: m[1], Href: m[2]})
+		links = append(links, markdownLink{Href: m[2]})
 	}
 	return links
 }
@@ -57,11 +65,7 @@ func CheckStaleness(files []*MemoryFile) *StalenessReport {
 
 // checkBrokenLinks finds MEMORY.md index entries that reference non-existent files.
 func checkBrokenLinks(files []*MemoryFile) []StalenessAlert {
-	knownPaths := make(map[string]bool, len(files))
-	for _, f := range files {
-		knownPaths[f.Path] = true
-	}
-
+	knownPaths := pathIndex(files)
 	var alerts []StalenessAlert
 	for _, f := range files {
 		if f.Category != "auto-memory" {
