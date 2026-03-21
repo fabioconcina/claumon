@@ -1,0 +1,31 @@
+# Binary
+claumon
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Release
+dist/
+
+# Environment
+.env
+.env.*

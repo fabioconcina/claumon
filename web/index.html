@@ -1,0 +1,1739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>claumon — Claude Code Dashboard</title>
+<style>
+:root {
+  --bg: #1a1a1a;
+  --bg-surface: #242424;
+  --bg-hover: #2e2e2e;
+  --border: #3a3a3a;
+  --text: #d4c5b9;
+  --text-dim: #7a6f65;
+  --text-bright: #f0e6dc;
+  --accent: #da7756;
+  --green: #8fbc8f;
+  --yellow: #e8c872;
+  --red: #d95f5f;
+  --orange: #e8915a;
+  --purple: #b89ada;
+  --teal: #7dbfb8;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Top bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-left { display: flex; align-items: center; gap: 16px; }
+.topbar-left h1 { font-size: 16px; font-weight: 600; color: var(--text-bright); }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red);
+  display: inline-block;
+}
+.status-dot.connected { background: var(--green); }
+.topbar-right { font-size: 12px; color: var(--text-dim); }
+
+/* Tabs */
+.tabs {
+  display: flex; gap: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+.tab {
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Content */
+.content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Gauges */
+.gauges {
+  display: flex; gap: 20px; flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.gauge-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex; align-items: center; gap: 20px;
+  flex: 1; min-width: 220px;
+}
+.gauge-svg { width: 80px; height: 80px; }
+.gauge-circle-bg { fill: none; stroke: var(--border); stroke-width: 8; }
+.gauge-circle-fg { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease, stroke 0.3s; }
+.gauge-text { font-size: 16px; font-weight: 700; fill: var(--text-bright); text-anchor: middle; dominant-baseline: central; }
+.gauge-info h3 { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.gauge-info .pct { font-size: 24px; font-weight: 700; color: var(--text-bright); }
+.gauge-info .reset { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* Summary cards */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.card-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.card-value { font-size: 24px; font-weight: 700; color: var(--text-bright); margin-top: 4px; }
+.card-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* Charts */
+.charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+@media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+.chart-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+.chart-card h3 { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Heatmap */
+.heatmap {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 3px;
+}
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  position: relative;
+}
+.heatmap-cell:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
+  background: #111; color: var(--text); padding: 4px 8px; border-radius: 4px;
+  font-size: 11px; white-space: nowrap; z-index: 10;
+}
+.heatmap-labels {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 3px;
+  margin-top: 4px;
+}
+.heatmap-labels span { font-size: 9px; color: var(--text-dim); text-align: center; }
+
+/* Sessions table */
+.table-wrap {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.table-wrap h3 {
+  font-size: 13px; color: var(--text-dim); padding: 16px 20px 0;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; color: var(--text-dim); padding: 10px 16px; border-bottom: 1px solid var(--border);
+  text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
+th:hover { color: var(--text); }
+td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg-hover); }
+tr.clickable { cursor: pointer; }
+.mono { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
+
+/* Session detail panel */
+.session-detail-overlay {
+  display: none;
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 55%; min-width: 500px; max-width: 800px;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  z-index: 100;
+  flex-direction: column;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.4);
+}
+.session-detail-overlay.open { display: flex; }
+.session-detail-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.session-detail-header h2 { font-size: 15px; color: var(--text-bright); }
+.session-detail-close {
+  background: none; border: none; color: var(--text-dim); font-size: 20px;
+  cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.session-detail-close:hover { background: var(--bg-hover); color: var(--text); }
+.session-detail-meta {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-dim);
+  display: flex; gap: 20px; flex-wrap: wrap;
+}
+.session-detail-meta .meta-item { display: flex; gap: 6px; align-items: center; }
+.session-detail-meta .meta-label { color: var(--text-dim); }
+.session-detail-meta .meta-value { color: var(--text-bright); font-weight: 600; }
+.session-detail-body {
+  flex: 1; overflow-y: auto; padding: 16px 20px;
+}
+.msg {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.msg-user {
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.msg-assistant {
+  background: rgba(218, 119, 86, 0.06);
+  border: 1px solid rgba(218, 119, 86, 0.15);
+}
+.msg-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; font-size: 11px;
+}
+.msg-role { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.msg-role.user { color: var(--green); }
+.msg-role.assistant { color: var(--accent); }
+.msg-tokens { color: var(--text-dim); }
+.msg-tools { font-size: 11px; color: var(--purple); margin-bottom: 4px; }
+.msg-text { white-space: pre-wrap; word-break: break-word; }
+.backdrop {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 99;
+}
+.backdrop.open { display: block; }
+
+/* Memories tab */
+.memories-search { margin-bottom: 20px; }
+.memories-search input {
+  width: 100%; padding: 10px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.memories-search input:focus { border-color: var(--accent); }
+.memories-search input::placeholder { color: var(--text-dim); }
+
+.memory-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.memory-section-header {
+  padding: 12px 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: background 0.15s;
+}
+.memory-section-header:hover { background: var(--bg-hover); }
+.memory-section-header h3 { font-size: 14px; color: var(--text-bright); }
+.memory-section-header .badge {
+  font-size: 11px; background: var(--accent); color: var(--bg);
+  padding: 2px 8px; border-radius: 10px;
+}
+.memory-section-body { display: none; padding: 0 20px 16px; }
+.memory-section.open .memory-section-body { display: block; }
+.memory-section.open .chevron { transform: rotate(90deg); }
+.chevron { transition: transform 0.2s; color: var(--text-dim); }
+
+.memory-file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.memory-file-header {
+  padding: 8px 14px;
+  background: var(--bg-hover);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.memory-file-header .path { font-size: 12px; font-family: monospace; color: var(--accent); }
+.memory-file-header .meta { font-size: 11px; color: var(--text-dim); }
+.memory-file-content {
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.memory-file-content h1 { font-size: 18px; margin: 12px 0 8px; color: var(--text-bright); }
+.memory-file-content h2 { font-size: 15px; margin: 10px 0 6px; color: var(--text-bright); }
+.memory-file-content h3 { font-size: 13px; margin: 8px 0 4px; color: var(--text-bright); }
+.memory-file-content p { margin: 6px 0; }
+.memory-file-content ul, .memory-file-content ol { padding-left: 20px; margin: 6px 0; }
+.memory-file-content code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.memory-file-content pre { background: var(--bg); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+.memory-file-content pre code { padding: 0; background: none; }
+.memory-file-content strong { color: var(--text-bright); }
+.memory-file-content a { color: var(--accent); }
+.memory-file.highlight { border-color: var(--yellow); animation: pulse 2s ease-out; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 4px rgba(249,226,175,0.3); } 100% { box-shadow: none; } }
+
+/* Memories toolbar */
+.memories-stats {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  display: flex; gap: 24px; flex-wrap: wrap;
+  font-size: 13px;
+}
+.memories-stats .stat { display: flex; gap: 6px; }
+.memories-stats .stat-value { color: var(--text-bright); font-weight: 700; }
+.memories-stats .stat-label { color: var(--text-dim); }
+
+.memories-toolbar {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 20px;
+}
+.memories-toolbar .memories-search { flex: 1; min-width: 200px; margin-bottom: 0; }
+
+.memories-filters {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.filter-btn {
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-btn:hover { border-color: var(--text-dim); color: var(--text); }
+.filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(218, 119, 86, 0.1); }
+.filter-btn .filter-count {
+  display: inline-block;
+  background: var(--bg-hover);
+  padding: 0 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+  font-size: 10px;
+}
+
+/* Frontmatter badges */
+.fm-badges {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.fm-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.fm-badge.type-user { border-color: #7dbfb8; color: #7dbfb8; }
+.fm-badge.type-feedback { border-color: #e8c872; color: #e8c872; }
+.fm-badge.type-project { border-color: #b89ada; color: #b89ada; }
+.fm-badge.type-reference { border-color: #8fbc8f; color: #8fbc8f; }
+.fm-name { font-weight: 600; color: var(--text-bright); font-size: 13px; }
+.fm-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* Staleness */
+.stale-indicator { font-size: 11px; margin-left: 8px; }
+.stale-fresh { color: var(--green); }
+.stale-recent { color: var(--text-dim); }
+.stale-old { color: var(--yellow); }
+.stale-stale { color: var(--red); }
+
+/* VSCode link */
+.vscode-link {
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  text-decoration: none;
+  margin-left: 8px;
+}
+.vscode-link:hover { opacity: 1; text-decoration: none; }
+
+.empty-state { text-align: center; padding: 40px; color: var(--text-dim); }
+
+/* Staleness alerts */
+.staleness-banner {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+}
+.staleness-banner.has-errors { border-color: var(--red); }
+.staleness-banner.has-warnings { border-color: var(--yellow); }
+.staleness-banner h3 {
+  font-size: 12px; color: var(--text-dim); margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.alert-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.alert-card:last-child { border-bottom: none; }
+.alert-icon { font-size: 12px; flex-shrink: 0; margin-top: 2px; font-weight: 700; }
+.alert-icon.error { color: var(--red); }
+.alert-icon.warning { color: var(--yellow); }
+.alert-message { font-size: 13px; }
+.alert-path { font-family: monospace; font-size: 12px; color: var(--accent); }
+.tab-badge {
+  display: inline-block;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 6px;
+  font-weight: 700;
+}
+
+/* Graph */
+.graph-container { position: relative; }
+.graph-stats {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  display: flex; gap: 24px; flex-wrap: wrap;
+  font-size: 13px;
+}
+.graph-stats .stat { display: flex; gap: 6px; }
+.graph-stats .stat-value { color: var(--text-bright); font-weight: 700; }
+.graph-stats .stat-label { color: var(--text-dim); }
+.graph-canvas {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  min-height: 400px;
+}
+.graph-canvas svg { display: block; width: 100%; height: 650px; }
+.graph-legend {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-top: 16px;
+  display: flex; gap: 20px; flex-wrap: wrap;
+  font-size: 12px; color: var(--text-dim);
+}
+.graph-legend-item { display: flex; align-items: center; gap: 6px; }
+.graph-legend-swatch { width: 12px; height: 12px; border-radius: 50%; }
+.graph-tooltip {
+  position: absolute;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 300px;
+  display: none;
+}
+.graph-tooltip .tt-label { font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
+.graph-tooltip .tt-project { color: var(--accent); font-size: 11px; }
+.graph-tooltip .tt-meta { color: var(--text-dim); font-size: 11px; margin-top: 4px; }
+
+/* Bar chart via SVG */
+.bar-chart { width: 100%; }
+.bar-label { font-size: 10px; fill: var(--text-dim); }
+.bar-value { font-size: 9px; fill: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>claumon</h1>
+    <span class="status-dot" id="statusDot" title="SSE disconnected"></span>
+    <span style="font-size:12px;color:var(--text-dim)" id="connStatus">Connecting...</span>
+  </div>
+  <div class="topbar-right">
+    <span id="lastUpdated">—</span>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard">Dashboard</div>
+  <div class="tab" data-tab="memories">Memories <span id="staleness-badge" class="tab-badge" style="display:none">0</span></div>
+  <div class="tab" data-tab="graph">Graph</div>
+</div>
+
+<div class="content">
+  <!-- Dashboard Tab -->
+  <div class="tab-content active" id="tab-dashboard">
+
+    <div class="gauges" id="gauges">
+      <div class="gauge-card">
+        <svg class="gauge-svg" viewBox="0 0 100 100">
+          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
+          <circle class="gauge-circle-fg" id="gauge-session-fg" cx="50" cy="50" r="40"
+            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
+            transform="rotate(-90 50 50)"/>
+          <text class="gauge-text" x="50" y="50" id="gauge-session-text">—</text>
+        </svg>
+        <div class="gauge-info">
+          <h3>Session (5hr)</h3>
+          <div class="pct" id="session-pct">—</div>
+          <div class="reset" id="session-reset">Reset: —</div>
+        </div>
+      </div>
+      <div class="gauge-card">
+        <svg class="gauge-svg" viewBox="0 0 100 100">
+          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
+          <circle class="gauge-circle-fg" id="gauge-weekly-fg" cx="50" cy="50" r="40"
+            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
+            transform="rotate(-90 50 50)"/>
+          <text class="gauge-text" x="50" y="50" id="gauge-weekly-text">—</text>
+        </svg>
+        <div class="gauge-info">
+          <h3>Weekly (7 day)</h3>
+          <div class="pct" id="weekly-pct">—</div>
+          <div class="reset" id="weekly-reset">Reset: —</div>
+        </div>
+      </div>
+      <div class="gauge-card" id="gauge-opus-card" style="display:none">
+        <svg class="gauge-svg" viewBox="0 0 100 100">
+          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
+          <circle class="gauge-circle-fg" id="gauge-opus-fg" cx="50" cy="50" r="40"
+            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
+            transform="rotate(-90 50 50)"/>
+          <text class="gauge-text" x="50" y="50" id="gauge-opus-text">—</text>
+        </svg>
+        <div class="gauge-info">
+          <h3>Weekly Opus</h3>
+          <div class="pct" id="opus-pct">—</div>
+          <div class="reset" id="opus-reset"></div>
+        </div>
+      </div>
+      <div class="gauge-card" id="gauge-sonnet-card" style="display:none">
+        <svg class="gauge-svg" viewBox="0 0 100 100">
+          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
+          <circle class="gauge-circle-fg" id="gauge-sonnet-fg" cx="50" cy="50" r="40"
+            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
+            transform="rotate(-90 50 50)"/>
+          <text class="gauge-text" x="50" y="50" id="gauge-sonnet-text">—</text>
+        </svg>
+        <div class="gauge-info">
+          <h3>Weekly Sonnet</h3>
+          <div class="pct" id="sonnet-pct">—</div>
+          <div class="reset" id="sonnet-reset"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-cards" id="summary-cards">
+      <div class="card">
+        <div class="card-label">Total Tokens</div>
+        <div class="card-value" id="card-tokens">—</div>
+        <div class="card-sub" id="card-tokens-detail"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Equiv. API Cost</div>
+        <div class="card-value" id="card-cost">—</div>
+        <div class="card-sub">today (not billed)</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sessions</div>
+        <div class="card-value" id="card-sessions">—</div>
+        <div class="card-sub">today</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Messages</div>
+        <div class="card-value" id="card-messages">—</div>
+        <div class="card-sub">today</div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Daily Tokens (14 days)</h3>
+        <div id="chart-tokens"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Equiv. API Cost (14 days)</h3>
+        <div id="chart-cost"></div>
+      </div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:24px">
+      <h3>Today's Activity by Hour</h3>
+      <div class="heatmap" id="heatmap"></div>
+      <div class="heatmap-labels" id="heatmap-labels"></div>
+    </div>
+
+    <div class="table-wrap">
+      <h3>Active Sessions</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Title</th>
+            <th>Model</th>
+            <th>Tokens</th>
+            <th>Cost</th>
+            <th>Messages</th>
+            <th>Last Activity</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Memories Tab -->
+  <div class="tab-content" id="tab-memories">
+    <div id="staleness-alerts" class="staleness-banner" style="display:none"></div>
+    <div id="memories-stats" class="memories-stats"></div>
+    <div class="memories-toolbar">
+      <div class="memories-search">
+        <input type="text" id="memory-search" placeholder="Search across all memory files..." />
+      </div>
+      <div class="memories-filters" id="memories-filters"></div>
+    </div>
+    <div id="memories-container"></div>
+  </div>
+
+  <!-- Graph Tab -->
+  <div class="tab-content" id="tab-graph">
+    <div id="graph-stats" class="graph-stats"></div>
+    <div id="graph-filters" class="memories-toolbar" style="margin-bottom:12px">
+      <div class="memories-filters" id="graph-project-filters"></div>
+    </div>
+    <div class="graph-canvas" id="graph-canvas"></div>
+    <div id="graph-tooltip" class="graph-tooltip"></div>
+    <div id="graph-legend" class="graph-legend"></div>
+  </div>
+</div>
+
+<!-- Session Detail Panel -->
+<div class="backdrop" id="detail-backdrop"></div>
+<div class="session-detail-overlay" id="session-detail">
+  <div class="session-detail-header">
+    <h2 id="detail-title">Session Detail</h2>
+    <button class="session-detail-close" id="detail-close">&times;</button>
+  </div>
+  <div class="session-detail-meta" id="detail-meta"></div>
+  <div class="session-detail-body" id="detail-body">
+    <div class="empty-state">Loading...</div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let sseConnected = false;
+let sessionsData = [];
+let memoriesData = [];
+let historyData = [];
+
+// --- Tabs ---
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    // Re-render graph when switching to its tab (needs visible width)
+    if (tab.dataset.tab === 'graph' && graphData) renderGraphView();
+  });
+});
+
+// --- Formatting ---
+function fmtNum(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return n.toString();
+}
+function fmtCost(n) { return '$' + n.toFixed(4); }
+function fmtTimeAgo(ts) {
+  const d = new Date(ts);
+  const diff = Date.now() - d.getTime();
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return d.toLocaleDateString();
+}
+function fmtTime(ts) {
+  return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+function gaugeColor(pct) {
+  if (pct < 50) return 'var(--green)';
+  if (pct < 80) return 'var(--yellow)';
+  return 'var(--red)';
+}
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- Gauges ---
+function updateGauge(id, pct, resetStr) {
+  const circumference = 251.33;
+  const fg = document.getElementById('gauge-' + id + '-fg');
+  const txt = document.getElementById('gauge-' + id + '-text');
+  const pctEl = document.getElementById(id + '-pct');
+  const resetEl = document.getElementById(id + '-reset');
+  if (!fg) return;
+
+  const p = Math.min(100, Math.max(0, pct));
+  const offset = circumference - (p / 100) * circumference;
+  const color = gaugeColor(p);
+
+  fg.style.strokeDashoffset = offset;
+  fg.style.stroke = color;
+  txt.textContent = Math.round(p) + '%';
+  pctEl.textContent = p.toFixed(1) + '%';
+  pctEl.style.color = color;
+  if (resetEl) resetEl.textContent = resetStr ? 'Reset: ' + resetStr : '';
+}
+
+function updateUsageGauges(data) {
+  if (data.available === false) {
+    updateGauge('session', 0, 'No data');
+    updateGauge('weekly', 0, 'No data');
+    return;
+  }
+  updateGauge('session', data.session_pct || 0, data.session_reset || '');
+  updateGauge('weekly', data.weekly_pct || 0, data.weekly_reset || '');
+
+  // Opus gauge
+  const opusCard = document.getElementById('gauge-opus-card');
+  if (data.weekly_opus_pct > 0) {
+    opusCard.style.display = 'flex';
+    updateGauge('opus', data.weekly_opus_pct, data.weekly_opus_reset || '');
+  } else {
+    opusCard.style.display = 'none';
+  }
+
+  // Sonnet gauge
+  const sonnetCard = document.getElementById('gauge-sonnet-card');
+  if (data.weekly_sonnet_pct > 0) {
+    sonnetCard.style.display = 'flex';
+    updateGauge('sonnet', data.weekly_sonnet_pct, data.weekly_sonnet_reset || '');
+  } else {
+    sonnetCard.style.display = 'none';
+  }
+}
+
+// --- Bar Chart (SVG) ---
+function renderBarChart(containerId, data, valueKey, colorFn) {
+  const container = document.getElementById(containerId);
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state">No data yet</div>';
+    return;
+  }
+
+  const maxVal = Math.max(...data.map(d => {
+    if (typeof valueKey === 'function') return valueKey(d);
+    return d[valueKey] || 0;
+  }), 1);
+
+  const w = 600, h = 180, pad = 30, barGap = 4;
+  const barW = Math.max(8, (w - pad * 2) / data.length - barGap);
+
+  let svg = `<svg viewBox="0 0 ${w} ${h}" class="bar-chart" preserveAspectRatio="xMidYMid meet">`;
+
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (h - pad * 2) * (1 - i/4);
+    const val = (maxVal * i / 4);
+    svg += `<line x1="${pad}" y1="${y}" x2="${w-10}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
+    svg += `<text x="${pad-4}" y="${y+3}" class="bar-value" text-anchor="end">${fmtNum(Math.round(val))}</text>`;
+  }
+
+  data.forEach((d, i) => {
+    const val = typeof valueKey === 'function' ? valueKey(d) : (d[valueKey] || 0);
+    const barH = (val / maxVal) * (h - pad * 2);
+    const x = pad + i * (barW + barGap);
+    const y = h - pad - barH;
+    const color = colorFn ? colorFn(d, i) : 'var(--accent)';
+
+    svg += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="2" fill="${color}" opacity="0.85">
+      <title>${d.date}: ${fmtNum(val)}</title>
+    </rect>`;
+
+    // Value label on top of bar
+    if (val > 0) {
+      const label = valueKey === 'cost_usd' ? '$' + Math.round(val) : fmtNum(val);
+      svg += `<text x="${x + barW/2}" y="${y - 4}" class="bar-value" text-anchor="middle">${label}</text>`;
+    }
+
+    if (i % 2 === 0 || data.length <= 7) {
+      const dateLabel = d.date ? d.date.slice(5) : '';
+      svg += `<text x="${x + barW/2}" y="${h - 8}" class="bar-label" text-anchor="middle">${dateLabel}</text>`;
+    }
+  });
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+function renderStackedBarChart(containerId, data) {
+  const container = document.getElementById(containerId);
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state">No data yet</div>';
+    return;
+  }
+
+  const maxVal = Math.max(...data.map(d =>
+    (d.input_tokens||0) + (d.output_tokens||0) + (d.cache_read_tokens||0) + (d.cache_create_tokens||0)
+  ), 1);
+
+  const w = 600, h = 180, pad = 30, barGap = 4;
+  const barW = Math.max(8, (w - pad * 2) / data.length - barGap);
+
+  let svg = `<svg viewBox="0 0 ${w} ${h}" class="bar-chart" preserveAspectRatio="xMidYMid meet">`;
+
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (h - pad * 2) * (1 - i/4);
+    svg += `<line x1="${pad}" y1="${y}" x2="${w-10}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
+    svg += `<text x="${pad-4}" y="${y+3}" class="bar-value" text-anchor="end">${fmtNum(Math.round(maxVal * i / 4))}</text>`;
+  }
+
+  const colors = ['var(--accent)', 'var(--purple)', 'var(--teal)', 'var(--orange)'];
+  const keys = ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_create_tokens'];
+
+  data.forEach((d, i) => {
+    const x = pad + i * (barW + barGap);
+    let cumY = h - pad;
+    const total = keys.reduce((sum, key) => sum + (d[key] || 0), 0);
+
+    keys.forEach((key, ki) => {
+      const val = d[key] || 0;
+      const barH = (val / maxVal) * (h - pad * 2);
+      cumY -= barH;
+      svg += `<rect x="${x}" y="${cumY}" width="${barW}" height="${barH}" fill="${colors[ki]}" opacity="0.85">
+        <title>${key}: ${fmtNum(val)}</title>
+      </rect>`;
+    });
+
+    // Value label on top of bar
+    if (total > 0) {
+      svg += `<text x="${x + barW/2}" y="${cumY - 4}" class="bar-value" text-anchor="middle">${fmtNum(total)}</text>`;
+    }
+
+    if (i % 2 === 0 || data.length <= 7) {
+      svg += `<text x="${x + barW/2}" y="${h - 8}" class="bar-label" text-anchor="middle">${(d.date||'').slice(5)}</text>`;
+    }
+  });
+
+  // Legend
+  const legendY = 10;
+  const labels = ['Input', 'Output', 'Cache Read', 'Cache Write'];
+  let lx = pad;
+  labels.forEach((label, i) => {
+    svg += `<rect x="${lx}" y="${legendY}" width="8" height="8" rx="1" fill="${colors[i]}" opacity="0.85"/>`;
+    svg += `<text x="${lx+12}" y="${legendY+8}" class="bar-label">${label}</text>`;
+    lx += label.length * 6 + 24;
+  });
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
+// --- Heatmap ---
+function renderHeatmap(sessions) {
+  const heatmap = document.getElementById('heatmap');
+  const labels = document.getElementById('heatmap-labels');
+
+  const hours = new Array(24).fill(0);
+  sessions.forEach(s => {
+    if (s.last_activity) {
+      const h = new Date(s.last_activity).getHours();
+      hours[h] += s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_create_tokens;
+    }
+  });
+
+  const maxH = Math.max(...hours, 1);
+  heatmap.innerHTML = hours.map((v, i) => {
+    const intensity = v / maxH;
+    let bg = 'var(--bg-hover)';
+    if (intensity > 0) {
+      const alpha = 0.2 + intensity * 0.8;
+      bg = `rgba(218, 119, 86, ${alpha})`;
+    }
+    return `<div class="heatmap-cell" style="background:${bg}" data-tooltip="${i}:00 — ${fmtNum(v)} tokens"></div>`;
+  }).join('');
+
+  labels.innerHTML = hours.map((_, i) =>
+    `<span>${i % 3 === 0 ? i + ':00' : ''}</span>`
+  ).join('');
+}
+
+// --- Sessions Table ---
+function renderSessions(sessions) {
+  const tbody = document.getElementById('sessions-table');
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px">No sessions today</td></tr>';
+    return;
+  }
+
+  sessions.sort((a, b) => new Date(b.last_activity) - new Date(a.last_activity));
+
+  tbody.innerHTML = sessions.map(s => `
+    <tr class="clickable" data-session-id="${s.id}" onclick="openSessionDetail('${s.id}')">
+      <td class="mono" title="${escHtml(s.cwd || s.project)}">${escHtml(shortProject(s.project || s.cwd))}</td>
+      <td>${escHtml(s.title || '—')}</td>
+      <td><span style="color:var(--purple)">${escHtml(shortModel(s.model))}</span></td>
+      <td class="mono">${fmtNum(s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_create_tokens)}</td>
+      <td class="mono">${fmtCost(s.estimated_cost_usd || 0)}</td>
+      <td>${s.message_count || 0}</td>
+      <td style="color:var(--text-dim)">${fmtTimeAgo(s.last_activity)}</td>
+    </tr>
+  `).join('');
+}
+
+function shortProject(p) {
+  if (!p) return '—';
+  const parts = p.replace(/\\/g, '/').split('/');
+  return parts.slice(-2).join('/');
+}
+function shortModel(m) {
+  if (!m) return '—';
+  return m.replace('claude-', '').replace(/-\d{8}$/, '');
+}
+
+// --- Session Detail ---
+function openSessionDetail(sessionId) {
+  const panel = document.getElementById('session-detail');
+  const backdrop = document.getElementById('detail-backdrop');
+  const body = document.getElementById('detail-body');
+  const meta = document.getElementById('detail-meta');
+  const title = document.getElementById('detail-title');
+
+  // Find session info
+  const session = sessionsData.find(s => s.id === sessionId);
+  if (session) {
+    title.textContent = session.title || 'Session Detail';
+    meta.innerHTML = `
+      <div class="meta-item"><span class="meta-label">Project:</span> <span class="meta-value">${escHtml(shortProject(session.project))}</span></div>
+      <div class="meta-item"><span class="meta-label">Model:</span> <span class="meta-value" style="color:var(--purple)">${escHtml(shortModel(session.model))}</span></div>
+      <div class="meta-item"><span class="meta-label">Tokens:</span> <span class="meta-value">${fmtNum(session.input_tokens + session.output_tokens + session.cache_read_tokens + session.cache_create_tokens)}</span></div>
+      <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">${fmtCost(session.estimated_cost_usd || 0)}</span></div>
+      <div class="meta-item"><span class="meta-label">Messages:</span> <span class="meta-value">${session.message_count}</span></div>
+    `;
+  }
+
+  body.innerHTML = '<div class="empty-state">Loading messages...</div>';
+  panel.classList.add('open');
+  backdrop.classList.add('open');
+
+  fetch('/api/sessions/' + sessionId)
+    .then(r => r.json())
+    .then(messages => {
+      if (!messages.length) {
+        body.innerHTML = '<div class="empty-state">No messages found</div>';
+        return;
+      }
+
+      body.innerHTML = messages.map(m => {
+        const isUser = m.role === 'user';
+        let tokensInfo = '';
+        if (m.tokens_in || m.tokens_out) {
+          tokensInfo = `in: ${fmtNum(m.tokens_in)} out: ${fmtNum(m.tokens_out)}`;
+          if (m.cache_read) tokensInfo += ` cache: ${fmtNum(m.cache_read)}`;
+        }
+
+        let toolsHtml = '';
+        if (m.tool_use) {
+          toolsHtml = `<div class="msg-tools">Tools: ${escHtml(m.tool_use)}</div>`;
+        }
+
+        const text = m.text || '';
+        const displayText = text.length > 2000 ? text.substring(0, 2000) + '\n\n... (truncated)' : text;
+
+        return `
+          <div class="msg ${isUser ? 'msg-user' : 'msg-assistant'}">
+            <div class="msg-header">
+              <span class="msg-role ${m.role}">${m.role}</span>
+              <span class="msg-tokens">${fmtTime(m.timestamp)} ${tokensInfo ? '| ' + tokensInfo : ''}</span>
+            </div>
+            ${toolsHtml}
+            <div class="msg-text">${escHtml(displayText)}</div>
+          </div>
+        `;
+      }).join('');
+    })
+    .catch(() => {
+      body.innerHTML = '<div class="empty-state">Failed to load session</div>';
+    });
+}
+
+function closeSessionDetail() {
+  document.getElementById('session-detail').classList.remove('open');
+  document.getElementById('detail-backdrop').classList.remove('open');
+}
+
+document.getElementById('detail-close').addEventListener('click', closeSessionDetail);
+document.getElementById('detail-backdrop').addEventListener('click', closeSessionDetail);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSessionDetail();
+});
+
+// --- Memories ---
+let activeFilters = new Set(); // empty = show all
+
+const catLabels = {
+  'claude-md': 'CLAUDE.md',
+  'rules': 'Rules',
+  'auto-memory': 'Index',
+  'memory-file': 'Memory'
+};
+
+const fmTypeColors = {
+  'user': 'type-user',
+  'feedback': 'type-feedback',
+  'project': 'type-project',
+  'reference': 'type-reference'
+};
+
+function stalenessInfo(modTime) {
+  const now = Date.now();
+  const ms = now - modTime * 1000;
+  const days = Math.floor(ms / 86400000);
+  if (days < 7) return { cls: 'stale-fresh', text: days <= 0 ? 'today' : days + 'd ago' };
+  if (days < 30) return { cls: 'stale-recent', text: Math.floor(days/7) + 'w ago' };
+  if (days < 90) return { cls: 'stale-old', text: Math.floor(days/30) + 'mo ago' };
+  return { cls: 'stale-stale', text: Math.floor(days/30) + 'mo ago' };
+}
+
+function vscodeUrl(path) {
+  // Convert Windows backslashes, build vscode:// URL
+  const normalized = path.replace(/\\/g, '/');
+  return 'vscode://file/' + encodeURI(normalized);
+}
+
+function renderMemoriesStats(memories) {
+  const stats = document.getElementById('memories-stats');
+  if (!memories || !memories.length) {
+    stats.innerHTML = '';
+    return;
+  }
+
+  const projects = new Set();
+  const cats = {};
+  memories.forEach(m => {
+    if (m.project) projects.add(m.project);
+    cats[m.category] = (cats[m.category] || 0) + 1;
+  });
+
+  const globalCount = memories.filter(m => !m.project).length;
+
+  stats.innerHTML = `
+    <div class="stat"><span class="stat-value">${memories.length}</span> <span class="stat-label">files</span></div>
+    <div class="stat"><span class="stat-value">${projects.size}</span> <span class="stat-label">projects</span></div>
+    <div class="stat"><span class="stat-value">${globalCount}</span> <span class="stat-label">global</span></div>
+    ${Object.entries(cats).map(([cat, n]) =>
+      `<div class="stat"><span class="stat-value">${n}</span> <span class="stat-label">${catLabels[cat] || cat}</span></div>`
+    ).join('')}
+  `;
+}
+
+function renderMemoriesFilters(memories) {
+  const filters = document.getElementById('memories-filters');
+  if (!memories || !memories.length) {
+    filters.innerHTML = '';
+    return;
+  }
+
+  const cats = {};
+  memories.forEach(m => { cats[m.category] = (cats[m.category] || 0) + 1; });
+
+  filters.innerHTML = Object.entries(cats).map(([cat, n]) => {
+    const active = activeFilters.has(cat) ? 'active' : '';
+    return `<button class="filter-btn ${active}" data-cat="${cat}">${catLabels[cat] || cat}<span class="filter-count">${n}</span></button>`;
+  }).join('');
+
+  filters.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.cat;
+      if (activeFilters.has(cat)) {
+        activeFilters.delete(cat);
+      } else {
+        activeFilters.add(cat);
+      }
+      renderMemoriesFilters(memoriesData);
+      applyMemoriesView();
+    });
+  });
+}
+
+function applyMemoriesView() {
+  let filtered = memoriesData;
+  if (activeFilters.size > 0) {
+    filtered = memoriesData.filter(m => activeFilters.has(m.category));
+  }
+  const q = document.getElementById('memory-search').value.trim();
+  if (q) {
+    const ql = q.toLowerCase();
+    filtered = filtered.filter(m =>
+      (m.content||'').toLowerCase().includes(ql) ||
+      (m.path||'').toLowerCase().includes(ql) ||
+      (m.project||'').toLowerCase().includes(ql) ||
+      (m.fm_name||'').toLowerCase().includes(ql) ||
+      (m.fm_description||'').toLowerCase().includes(ql)
+    );
+  }
+  renderMemoriesContent(filtered);
+}
+
+function renderMemories(memories) {
+  renderMemoriesStats(memories);
+  renderMemoriesFilters(memories);
+  renderMemoriesContent(memories);
+}
+
+function renderMemoriesContent(memories) {
+  const container = document.getElementById('memories-container');
+  if (!memories || !memories.length) {
+    container.innerHTML = '<div class="empty-state">No memory files found</div>';
+    return;
+  }
+
+  const groups = {};
+  memories.forEach(m => {
+    const key = m.project || '__global__';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(m);
+  });
+
+  let html = '';
+
+  if (groups.__global__) {
+    html += renderMemorySection('Global', groups.__global__, true);
+    delete groups.__global__;
+  }
+
+  Object.keys(groups).sort().forEach(proj => {
+    html += renderMemorySection(shortProject(proj), groups[proj], false);
+  });
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('.memory-section-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.parentElement.classList.toggle('open');
+    });
+  });
+}
+
+function renderMemorySection(title, files, startOpen) {
+  return `
+    <div class="memory-section ${startOpen ? 'open' : ''}">
+      <div class="memory-section-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="chevron">&#9654;</span>
+          <h3>${escHtml(title)}</h3>
+        </div>
+        <span class="badge">${files.length} file${files.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="memory-section-body">
+        ${files.map(f => renderMemoryFileCard(f)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderMemoryFileCard(f) {
+  const stale = stalenessInfo(f.mod_time);
+  const hasFM = f.fm_name || f.fm_type;
+
+  let badgesHtml = '';
+  if (hasFM) {
+    badgesHtml = '<div class="fm-badges">';
+    if (f.fm_type) {
+      badgesHtml += `<span class="fm-badge ${fmTypeColors[f.fm_type] || ''}">${escHtml(f.fm_type)}</span>`;
+    }
+    badgesHtml += `<span class="fm-badge">${catLabels[f.category] || f.category}</span>`;
+    badgesHtml += '</div>';
+    if (f.fm_name) {
+      badgesHtml += `<div class="fm-name">${escHtml(f.fm_name)}</div>`;
+    }
+    if (f.fm_description) {
+      badgesHtml += `<div class="fm-desc">${escHtml(f.fm_description)}</div>`;
+    }
+  }
+
+  return `
+    <div class="memory-file" data-path="${escHtml(f.path)}">
+      <div class="memory-file-header">
+        <span class="path">${catLabels[f.category] || f.category}: ${fileName(f.path)}
+          <a class="vscode-link" href="${vscodeUrl(f.path)}" title="Open in VS Code">edit</a>
+        </span>
+        <span class="meta">
+          <span class="stale-indicator ${stale.cls}">${stale.text}</span>
+          ${new Date(f.mod_time * 1000).toLocaleDateString()}
+        </span>
+      </div>
+      ${badgesHtml ? '<div style="padding:8px 14px 0">' + badgesHtml + '</div>' : ''}
+      <div class="memory-file-content">${f.html_content || '<em>Empty</em>'}</div>
+    </div>
+  `;
+}
+
+function fileName(path) {
+  return path.replace(/\\/g, '/').split('/').pop();
+}
+
+// --- Memory Search ---
+let searchTimeout;
+document.getElementById('memory-search').addEventListener('input', e => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => applyMemoriesView(), 300);
+});
+
+// --- Staleness Alerts ---
+let stalenessData = null;
+
+function fetchStaleness() {
+  fetch('/api/memories/staleness').then(r => r.json()).then(data => {
+    stalenessData = data;
+    renderStalenessAlerts(data);
+    updateStalenessBadge(data);
+  }).catch(() => {});
+}
+
+function updateStalenessBadge(data) {
+  const badge = document.getElementById('staleness-badge');
+  const count = data.alerts ? data.alerts.length : 0;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderStalenessAlerts(data) {
+  const container = document.getElementById('staleness-alerts');
+  if (!data.alerts || !data.alerts.length) {
+    container.style.display = 'none';
+    return;
+  }
+  const hasErrors = data.alerts.some(a => a.severity === 'error');
+  const hasWarnings = data.alerts.some(a => a.severity === 'warning');
+  container.className = 'staleness-banner' +
+    (hasErrors ? ' has-errors' : hasWarnings ? ' has-warnings' : '');
+  container.style.display = 'block';
+
+  container.innerHTML = `
+    <h3>Staleness Alerts (${data.alerts.length})</h3>
+    ${data.alerts.map(a => `
+      <div class="alert-card">
+        <span class="alert-icon ${a.severity}">${a.severity === 'error' ? '!' : '?'}</span>
+        <div>
+          <div class="alert-message">${escHtml(a.message)}</div>
+          <div class="alert-path">
+            <a class="vscode-link" href="${vscodeUrl(a.file_path)}" style="opacity:1;margin:0">${fileName(a.file_path)}</a>
+            ${a.target_path ? ' &#8594; ' + escHtml(fileName(a.target_path)) : ''}
+          </div>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+// --- Memory Graph ---
+let graphData = null;
+let graphProjectFilters = new Set(); // empty = show all
+let graphHiddenTypes = new Set(); // legend toggle: hidden node types
+
+function fetchGraph() {
+  fetch('/api/memories/graph').then(r => r.json()).then(data => {
+    graphData = data;
+    renderGraphFilters(data);
+    renderGraphView();
+  }).catch(() => {});
+}
+
+function renderGraphFilters(data) {
+  const container = document.getElementById('graph-project-filters');
+  if (!data.groups || !data.groups.length) { container.innerHTML = ''; return; }
+  container.innerHTML = data.groups.map(g =>
+    `<button class="filter-btn" data-graph-project="${escHtml(g.project)}">${escHtml(g.label)} <span class="filter-count">${g.count}</span></button>`
+  ).join('');
+  container.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const proj = btn.getAttribute('data-graph-project');
+      if (graphProjectFilters.has(proj)) {
+        graphProjectFilters.delete(proj);
+        btn.classList.remove('active');
+      } else {
+        graphProjectFilters.add(proj);
+        btn.classList.add('active');
+      }
+      renderGraphView();
+    });
+  });
+}
+
+function renderGraphView() {
+  if (!graphData) return;
+  const data = graphData;
+  const canvas = document.getElementById('graph-canvas');
+  const statsEl = document.getElementById('graph-stats');
+  const legendEl = document.getElementById('graph-legend');
+
+  if (!data.nodes || !data.nodes.length) {
+    canvas.innerHTML = '<div class="empty-state">No memory files found</div>';
+    statsEl.innerHTML = '';
+    legendEl.innerHTML = '';
+    return;
+  }
+
+  // Apply project filter
+  const showAll = graphProjectFilters.size === 0;
+  const visibleNodes = data.nodes.filter(n => showAll || graphProjectFilters.has(n.project));
+  const visibleIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = data.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+
+  // Apply legend type filter
+  const filteredNodes = visibleNodes.filter(n => !graphHiddenTypes.has(nodeTypeKey(n)));
+  const filteredIds = new Set(filteredNodes.map(n => n.id));
+  const filteredEdges = visibleEdges.filter(e => filteredIds.has(e.source) && filteredIds.has(e.target));
+
+  // Stats
+  const edgesByType = {};
+  filteredEdges.forEach(e => { edgesByType[e.type] = (edgesByType[e.type] || 0) + 1; });
+  statsEl.innerHTML = `
+    <div class="stat"><span class="stat-value">${filteredNodes.length}</span><span class="stat-label">nodes</span></div>
+    <div class="stat"><span class="stat-value">${filteredEdges.length}</span><span class="stat-label">edges</span></div>
+    <div class="stat"><span class="stat-value">${new Set(filteredNodes.map(n => n.project)).size}</span><span class="stat-label">projects</span></div>
+    ${edgesByType['cross-project'] ? '<div class="stat"><span class="stat-value">' + edgesByType['cross-project'] + '</span><span class="stat-label">cross-project links</span></div>' : ''}
+  `;
+
+  if (!filteredNodes.length) {
+    canvas.innerHTML = '<div class="empty-state">No nodes match current filters</div>';
+    renderGraphLegend(legendEl);
+    return;
+  }
+
+  // Layout
+  const cw = canvas.clientWidth || canvas.parentElement.clientWidth || document.querySelector('.content').clientWidth;
+  const width = Math.max(cw - 32, 600);
+  const height = 650;
+  const nodes = filteredNodes.map(n => ({ ...n, x: 0, y: 0, vx: 0, vy: 0 }));
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  layoutGraph(nodes, filteredEdges, width, height, nodeMap);
+
+  // Render SVG
+  let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Group backgrounds
+  const groupNodes = {};
+  nodes.forEach(n => {
+    const key = n.project || '__global__';
+    if (!groupNodes[key]) groupNodes[key] = [];
+    groupNodes[key].push(n);
+  });
+
+  const groupColors = ['rgba(218,119,86,0.06)', 'rgba(125,191,184,0.06)', 'rgba(184,154,218,0.06)',
+    'rgba(232,200,114,0.06)', 'rgba(143,188,143,0.06)', 'rgba(217,95,95,0.06)'];
+  let gi = 0;
+  for (const key in groupNodes) {
+    const gn = groupNodes[key];
+    if (gn.length < 1) continue;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    gn.forEach(n => {
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
+    });
+    const pad = 45;
+    const gLabel = key === '__global__' ? 'Global' : key.split('/').pop();
+    svg += `<rect x="${minX-pad}" y="${minY-pad}" width="${maxX-minX+pad*2}" height="${maxY-minY+pad*2+20}"
+      rx="12" fill="${groupColors[gi % groupColors.length]}" stroke="${groupColors[gi % groupColors.length].replace('0.06','0.15')}" stroke-width="1"/>`;
+    svg += `<text x="${minX-pad+10}" y="${minY-pad+16}" font-size="11" fill="var(--text-dim)" opacity="0.6">${escHtml(gLabel)}</text>`;
+    gi++;
+  }
+
+  // Edges
+  filteredEdges.forEach(e => {
+    const s = nodeMap[e.source], t = nodeMap[e.target];
+    if (!s || !t) return;
+    if (e.type === 'cross-project') {
+      svg += `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="4,4" opacity="0.15"/>`;
+    } else {
+      svg += `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="var(--text-dim)" stroke-width="1.5" opacity="0.4"/>`;
+    }
+  });
+
+  // Nodes
+  nodes.forEach(n => {
+    const r = n.category === 'claude-md' ? 12 : n.category === 'auto-memory' ? 10 : 8;
+    const fill = nodeColor(n);
+    svg += `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${fill}" stroke-width="1" opacity="0.9"
+      data-node-id="${escHtml(n.id)}" style="cursor:pointer"/>`;
+    svg += `<text x="${n.x}" y="${n.y + r + 12}" font-size="10" fill="var(--text-dim)" text-anchor="middle">${escHtml(n.label.length > 20 ? n.label.slice(0,18) + '..' : n.label)}</text>`;
+  });
+
+  svg += '</svg>';
+  canvas.innerHTML = svg;
+
+  // Interactivity
+  const tooltip = document.getElementById('graph-tooltip');
+  canvas.querySelectorAll('circle[data-node-id]').forEach(circle => {
+    circle.addEventListener('mouseenter', ev => {
+      const id = circle.getAttribute('data-node-id');
+      const n = nodeMap[id];
+      if (!n) return;
+      const stale = stalenessInfo(n.mod_time);
+      tooltip.innerHTML = `
+        <div class="tt-label">${escHtml(n.label)}</div>
+        ${n.project ? '<div class="tt-project">' + escHtml(shortProject(n.project)) + '</div>' : '<div class="tt-project">Global</div>'}
+        <div class="tt-meta">${catLabels[n.category] || n.category}${n.fm_type ? ' &middot; ' + n.fm_type : ''} &middot; <span class="${stale.cls}">${stale.text}</span></div>
+      `;
+      tooltip.style.display = 'block';
+      const rect = canvas.getBoundingClientRect();
+      tooltip.style.left = (ev.clientX - rect.left + 16) + 'px';
+      tooltip.style.top = (ev.clientY - rect.top - 10) + 'px';
+    });
+    circle.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+    circle.addEventListener('click', () => {
+      const id = circle.getAttribute('data-node-id');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelector('.tab[data-tab="memories"]').classList.add('active');
+      document.getElementById('tab-memories').classList.add('active');
+      setTimeout(() => {
+        const el = document.querySelector(`.memory-file[data-path="${id}"]`);
+        if (el) {
+          const section = el.closest('.memory-section');
+          if (section && !section.classList.contains('open')) section.classList.add('open');
+          el.classList.add('highlight');
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          setTimeout(() => el.classList.remove('highlight'), 3000);
+        }
+      }, 100);
+    });
+  });
+
+  renderGraphLegend(legendEl);
+}
+
+function renderGraphLegend(legendEl) {
+  const legendItems = [
+    { key: 'claude-md', label: 'CLAUDE.md', color: 'var(--accent)' },
+    { key: 'auto-memory', label: 'Index', color: 'var(--yellow)' },
+    { key: 'rules', label: 'Rules / User', color: 'var(--teal)' },
+    { key: 'fm:project', label: 'Project', color: 'var(--purple)' },
+    { key: 'fm:reference', label: 'Reference', color: 'var(--green)' },
+    { key: 'fm:feedback', label: 'Feedback', color: 'var(--yellow)' },
+  ];
+  legendEl.innerHTML = legendItems.map(item => {
+    const hidden = graphHiddenTypes.has(item.key);
+    return `<div class="graph-legend-item" data-legend-key="${item.key}" style="cursor:pointer;opacity:${hidden ? 0.3 : 1};transition:opacity 0.15s">
+      <span class="graph-legend-swatch" style="background:${item.color}"></span>${item.label}</div>`;
+  }).join('') + `
+    <div class="graph-legend-item" style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
+      <span style="display:inline-block;width:20px;height:2px;background:var(--text-dim);vertical-align:middle"></span> index link</div>
+    <div class="graph-legend-item">
+      <span style="display:inline-block;width:20px;height:0;border-top:2px dashed var(--accent);vertical-align:middle"></span> cross-project</div>
+  `;
+  legendEl.querySelectorAll('[data-legend-key]').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.getAttribute('data-legend-key');
+      if (graphHiddenTypes.has(key)) graphHiddenTypes.delete(key);
+      else graphHiddenTypes.add(key);
+      renderGraphView();
+    });
+  });
+}
+
+function nodeTypeKey(n) {
+  if (n.category === 'claude-md') return 'claude-md';
+  if (n.category === 'auto-memory') return 'auto-memory';
+  if (n.category === 'rules') return 'rules';
+  if (n.fm_type) return 'fm:' + n.fm_type;
+  return 'other';
+}
+
+function nodeColor(n) {
+  if (n.category === 'claude-md') return 'var(--accent)';
+  if (n.category === 'auto-memory') return 'var(--yellow)';
+  if (n.category === 'rules') return 'var(--teal)';
+  const typeColors = { user: 'var(--teal)', feedback: 'var(--yellow)', project: 'var(--purple)', reference: 'var(--green)' };
+  return typeColors[n.fm_type] || 'var(--text-dim)';
+}
+
+function layoutGraph(nodes, edges, width, height, nodeMap) {
+  if (nodes.length === 0) return;
+  if (nodes.length === 1) { nodes[0].x = width/2; nodes[0].y = height/2; return; }
+
+  const area = width * height;
+  const k = Math.sqrt(area / nodes.length) * 1.2;
+  const iterations = 300;
+  let temperature = Math.min(width, height) / 2;
+  const margin = 80;
+
+  // Seed positions by group — spread groups across the canvas
+  const groupList = [...new Set(nodes.map(n => n.project || '__global__'))];
+  const groupCenters = {};
+  const spreadX = width * 0.35;
+  const spreadY = height * 0.35;
+  groupList.forEach((g, i) => {
+    const angle = (2 * Math.PI * i) / groupList.length;
+    groupCenters[g] = {
+      x: width/2 + spreadX * Math.cos(angle),
+      y: height/2 + spreadY * Math.sin(angle)
+    };
+  });
+
+  nodes.forEach(n => {
+    const c = groupCenters[n.project || '__global__'];
+    n.x = c.x + (Math.random() - 0.5) * k;
+    n.y = c.y + (Math.random() - 0.5) * k;
+  });
+
+  for (let iter = 0; iter < iterations; iter++) {
+    // Repulsive forces (all pairs)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        let dx = nodes[i].x - nodes[j].x;
+        let dy = nodes[i].y - nodes[j].y;
+        const dist = Math.max(Math.sqrt(dx*dx + dy*dy), 0.1);
+        const force = (k * k) / dist;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        nodes[i].vx += fx; nodes[i].vy += fy;
+        nodes[j].vx -= fx; nodes[j].vy -= fy;
+      }
+    }
+
+    // Attractive forces along edges
+    edges.forEach(e => {
+      const s = nodeMap[e.source], t = nodeMap[e.target];
+      if (!s || !t) return;
+      const dx = s.x - t.x;
+      const dy = s.y - t.y;
+      const dist = Math.max(Math.sqrt(dx*dx + dy*dy), 0.1);
+      const strength = e.type === 'cross-project' ? 0.1 : 1.0;
+      const force = (dist / k) * strength;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      s.vx -= fx; s.vy -= fy;
+      t.vx += fx; t.vy += fy;
+    });
+
+    // Group cohesion
+    nodes.forEach(n => {
+      const c = groupCenters[n.project || '__global__'];
+      n.vx += (c.x - n.x) * 0.05;
+      n.vy += (c.y - n.y) * 0.05;
+    });
+
+    // Center gravity
+    nodes.forEach(n => {
+      n.vx += (width/2 - n.x) * 0.002;
+      n.vy += (height/2 - n.y) * 0.002;
+    });
+
+    // Apply velocities with temperature limiting
+    nodes.forEach(n => {
+      const disp = Math.sqrt(n.vx*n.vx + n.vy*n.vy);
+      if (disp > 0) {
+        const capped = Math.min(disp, temperature);
+        n.x += (n.vx / disp) * capped;
+        n.y += (n.vy / disp) * capped;
+      }
+      n.x = Math.max(margin, Math.min(width - margin, n.x));
+      n.y = Math.max(margin, Math.min(height - margin, n.y));
+      n.vx = 0; n.vy = 0;
+    });
+
+    temperature *= 0.97;
+  }
+
+  // Post-layout: resolve label overlaps by nudging close nodes apart
+  const minDist = 50; // minimum distance between node centers
+  for (let pass = 0; pass < 20; pass++) {
+    let moved = false;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        let dx = nodes[i].x - nodes[j].x;
+        let dy = nodes[i].y - nodes[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < minDist && dist > 0) {
+          const push = (minDist - dist) / 2 + 1;
+          const nx = (dx / dist) * push;
+          const ny = (dy / dist) * push;
+          nodes[i].x += nx; nodes[i].y += ny;
+          nodes[j].x -= nx; nodes[j].y -= ny;
+          // Clamp
+          nodes[i].x = Math.max(margin, Math.min(width - margin, nodes[i].x));
+          nodes[i].y = Math.max(margin, Math.min(height - margin, nodes[i].y));
+          nodes[j].x = Math.max(margin, Math.min(width - margin, nodes[j].x));
+          nodes[j].y = Math.max(margin, Math.min(height - margin, nodes[j].y));
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+// --- Data Fetching ---
+function updateTodaySummary(data) {
+  const total = (data.input_tokens||0) + (data.output_tokens||0) + (data.cache_read_tokens||0) + (data.cache_create_tokens||0);
+  document.getElementById('card-tokens').textContent = fmtNum(total);
+  document.getElementById('card-tokens-detail').textContent =
+    `In: ${fmtNum(data.input_tokens||0)} Out: ${fmtNum(data.output_tokens||0)}`;
+  document.getElementById('card-cost').textContent = fmtCost(data.cost_usd || 0);
+  document.getElementById('card-sessions').textContent = data.session_count || 0;
+  document.getElementById('card-messages').textContent = data.message_count || 0;
+}
+
+function fetchAll() {
+  fetch('/api/today').then(r => r.json()).then(updateTodaySummary).catch(() => {});
+
+  fetch('/api/sessions').then(r => r.json()).then(data => {
+    sessionsData = data;
+    renderSessions(data);
+    renderHeatmap(data);
+  }).catch(() => {});
+
+  fetch('/api/history?days=14').then(r => r.json()).then(data => {
+    historyData = data;
+    renderStackedBarChart('chart-tokens', data);
+    renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
+  }).catch(() => {});
+
+  fetch('/api/usage').then(r => r.json()).then(updateUsageGauges).catch(() => {});
+
+  fetch('/api/memories').then(r => r.json()).then(data => {
+    memoriesData = data;
+    renderMemories(data);
+  }).catch(() => {});
+
+  fetchStaleness();
+  fetchGraph();
+}
+
+// --- SSE ---
+function connectSSE() {
+  const es = new EventSource('/api/events');
+
+  es.onopen = () => {
+    sseConnected = true;
+    document.getElementById('statusDot').classList.add('connected');
+    document.getElementById('connStatus').textContent = 'Connected';
+  };
+
+  es.onerror = () => {
+    sseConnected = false;
+    document.getElementById('statusDot').classList.remove('connected');
+    document.getElementById('connStatus').textContent = 'Reconnecting...';
+  };
+
+  es.addEventListener('usage', e => {
+    const data = JSON.parse(e.data);
+    updateUsageGauges(data);
+    document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  });
+
+  es.addEventListener('sessions', e => {
+    sessionsData = JSON.parse(e.data);
+    renderSessions(sessionsData);
+    renderHeatmap(sessionsData);
+    fetch('/api/today').then(r => r.json()).then(updateTodaySummary);
+  });
+
+  es.addEventListener('memory_changed', e => {
+    fetch('/api/memories').then(r => r.json()).then(data => {
+      memoriesData = data;
+      const searchVal = document.getElementById('memory-search').value.trim();
+      if (!searchVal) renderMemories(data);
+      const changed = JSON.parse(e.data);
+      if (changed.path) {
+        setTimeout(() => {
+          const el = document.querySelector(`.memory-file[data-path="${changed.path}"]`);
+          if (el) {
+            el.classList.add('highlight');
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            setTimeout(() => el.classList.remove('highlight'), 3000);
+          }
+        }, 100);
+      }
+    });
+    fetchStaleness();
+    fetchGraph();
+  });
+
+  es.addEventListener('ping', () => {
+    document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  });
+}
+
+// --- Init ---
+fetch('/api/info').then(r => r.json()).then(info => {
+  if (info.is_api_billing) {
+    document.querySelector('#card-cost').parentElement.querySelector('.card-label').textContent = 'Estimated Cost';
+    document.querySelector('#card-cost').parentElement.querySelector('.card-sub').textContent = 'today';
+  }
+}).catch(() => {});
+fetchAll();
+connectSSE();
+
+// Periodic refresh (every 60s as fallback)
+setInterval(() => {
+  fetch('/api/today').then(r => r.json()).then(updateTodaySummary).catch(() => {});
+  // Refresh history charts too (new daily aggregates from backfill)
+  fetch('/api/history?days=14').then(r => r.json()).then(data => {
+    if (JSON.stringify(data) !== JSON.stringify(historyData)) {
+      historyData = data;
+      renderStackedBarChart('chart-tokens', data);
+      renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
+    }
+  }).catch(() => {});
+}, 60000);
+</script>
+</body>
+</html>

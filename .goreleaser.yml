@@ -1,0 +1,23 @@
+version: 2
+
+builds:
+  - binary: claumon
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: binary
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+release:
+  header: "{{ .Env.RELEASE_NOTES }}"
+
+changelog:
+  disable: true
