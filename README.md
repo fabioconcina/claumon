@@ -2,12 +2,13 @@
 [![GitHub release](https://img.shields.io/github/v/release/fabioconcina/claumon)](https://github.com/fabioconcina/claumon/releases/latest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/fabioconcina/claumon)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-brightgreen)](https://github.com/fabioconcina/claumon/releases/latest)
 
 # claumon
 
 **Claude Code dashboard** — run it, see where your tokens go.
 
-Single binary, zero config, one browser tab.
+Single binary, zero config, one browser tab. Runs on macOS, Linux, and Windows.
 
 ## Why claumon?
 
