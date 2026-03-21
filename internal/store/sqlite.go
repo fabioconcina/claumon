@@ -144,28 +144,3 @@ func (s *Store) GetTodaySummary() (*DailyAggregate, error) {
 	return &a, nil
 }
 
-func (s *Store) GetUsageSnapshots(hours int) ([]map[string]interface{}, error) {
-	since := time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02T15:04:05")
-	rows, err := s.db.Query(
-		`SELECT timestamp, session_pct, weekly_pct FROM usage_snapshots WHERE timestamp >= ? ORDER BY timestamp ASC`, since,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var result []map[string]interface{}
-	for rows.Next() {
-		var ts string
-		var sp, wp float64
-		if err := rows.Scan(&ts, &sp, &wp); err != nil {
-			return nil, err
-		}
-		result = append(result, map[string]interface{}{
-			"timestamp":   ts,
-			"session_pct": sp,
-			"weekly_pct":  wp,
-		})
-	}
-	return result, rows.Err()
-}

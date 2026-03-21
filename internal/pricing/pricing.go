@@ -129,7 +129,7 @@ func RefreshAsync(table *Table, configOverrides map[string]ModelPricing) {
 			mergeInto(models, configOverrides)
 		}
 		table.update(models)
-		log.Printf("[pricing] Updated pricing (%d models)", len(models))
+		log.Printf("[pricing] Background refresh complete (%d models)", len(models))
 	}()
 }
 
@@ -207,8 +207,13 @@ func saveCache(models map[string]ModelPricing) {
 	}
 
 	path := cachePath()
-	os.MkdirAll(filepath.Dir(path), 0755)
-	os.WriteFile(path, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		log.Printf("[pricing] Failed to create cache directory: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[pricing] Failed to write cache file: %v", err)
+	}
 }
 
 func mergeInto(dst, src map[string]ModelPricing) {

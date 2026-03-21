@@ -151,15 +151,16 @@ func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
 
 // SessionResetDuration parses the session reset time and returns duration until reset.
 func (u *UsageResponse) SessionResetDuration() time.Duration {
-	return parseDuration(u.SessionResetAt)
+	return ParseResetDuration(u.SessionResetAt)
 }
 
 // WeeklyResetDuration parses the weekly reset time and returns duration until reset.
 func (u *UsageResponse) WeeklyResetDuration() time.Duration {
-	return parseDuration(u.WeeklyResetAt)
+	return ParseResetDuration(u.WeeklyResetAt)
 }
 
-func parseDuration(s string) time.Duration {
+// ParseResetDuration parses an RFC3339 timestamp and returns the duration until that time.
+func ParseResetDuration(s string) time.Duration {
 	if s == "" {
 		return 0
 	}

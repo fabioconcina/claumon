@@ -172,18 +172,3 @@ func TestDiscoverAll(t *testing.T) {
 		}
 	}
 }
-
-func TestWatchPaths(t *testing.T) {
-	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "rules"), 0755)
-	projDir := filepath.Join(dir, "projects", "test-proj")
-	memDir := filepath.Join(projDir, "memory")
-	os.MkdirAll(memDir, 0755)
-
-	paths := WatchPaths(dir)
-
-	// Should include: claudeDir, rules, projDir, memDir
-	if len(paths) < 4 {
-		t.Errorf("WatchPaths() returned %d paths, want at least 4", len(paths))
-	}
-}

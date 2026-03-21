@@ -79,22 +79,16 @@ func (h *Handlers) HandleToday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var agg store.DailyAggregate
-	seen := make(map[string]bool)
-	for _, s := range sessions {
-		agg.InputTokens += s.InputTokens
-		agg.OutputTokens += s.OutputTokens
-		agg.CacheReadTokens += s.CacheReadTokens
-		agg.CacheCreateTokens += s.CacheCreateTokens
-		agg.CostUSD += s.EstimatedCostUSD
-		agg.MessageCount += s.MessageCount
-		if !seen[s.ID] {
-			seen[s.ID] = true
-			agg.SessionCount++
-		}
-	}
-
-	writeJSON(w, agg)
+	a := parser.AggregateSessions(sessions)
+	writeJSON(w, store.DailyAggregate{
+		InputTokens:       a.InputTokens,
+		OutputTokens:      a.OutputTokens,
+		CacheReadTokens:   a.CacheReadTokens,
+		CacheCreateTokens: a.CacheCreateTokens,
+		CostUSD:           a.CostUSD,
+		SessionCount:      a.SessionCount,
+		MessageCount:      a.MessageCount,
+	})
 }
 
 func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +101,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 
 	history, err := h.store.GetHistory(days)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if history == nil {
@@ -119,7 +113,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := parser.DiscoverTodaySessions(h.claudeDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if sessions == nil {
@@ -170,19 +164,19 @@ func (h *Handlers) HandleMemoriesSearch(w http.ResponseWriter, r *http.Request) 
 func (h *Handlers) HandleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "missing session id", http.StatusBadRequest)
+		writeJSONError(w, "missing session id", http.StatusBadRequest)
 		return
 	}
 
 	path := parser.FindSessionFile(h.claudeDir, id)
 	if path == "" {
-		http.Error(w, "session not found", http.StatusNotFound)
+		writeJSONError(w, "session not found", http.StatusNotFound)
 		return
 	}
 
 	messages, err := parser.ParseSessionDetail(path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if messages == nil {
@@ -205,4 +199,11 @@ func writeJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(data)
+}
+
+func writeJSONError(w http.ResponseWriter, msg string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

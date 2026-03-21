@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fabioconcina/claumon/internal/memory"
 	"github.com/fabioconcina/claumon/internal/pricing"
 )
 
@@ -216,7 +217,7 @@ func DiscoverSessions(claudeDir string) ([]*SessionSummary, error) {
 			continue
 		}
 		projPath := filepath.Join(projectsDir, projEntry.Name())
-		projName := DecodePath(projEntry.Name())
+		projName := memory.DecodePath(projEntry.Name())
 
 		files, err := filepath.Glob(filepath.Join(projPath, "*.jsonl"))
 		if err != nil {
@@ -333,6 +334,36 @@ func FindSessionFile(claudeDir, sessionID string) string {
 	return ""
 }
 
+// SessionAggregate holds aggregated token counts and cost across sessions.
+type SessionAggregate struct {
+	InputTokens       int
+	OutputTokens      int
+	CacheReadTokens   int
+	CacheCreateTokens int
+	CostUSD           float64
+	SessionCount      int
+	MessageCount      int
+}
+
+// AggregateSessions sums token counts, costs, and session/message counts.
+func AggregateSessions(sessions []*SessionSummary) SessionAggregate {
+	var agg SessionAggregate
+	seen := make(map[string]bool)
+	for _, s := range sessions {
+		agg.InputTokens += s.InputTokens
+		agg.OutputTokens += s.OutputTokens
+		agg.CacheReadTokens += s.CacheReadTokens
+		agg.CacheCreateTokens += s.CacheCreateTokens
+		agg.CostUSD += s.EstimatedCostUSD
+		agg.MessageCount += s.MessageCount
+		if !seen[s.ID] {
+			seen[s.ID] = true
+			agg.SessionCount++
+		}
+	}
+	return agg
+}
+
 func extractText(content json.RawMessage) string {
 	if len(content) == 0 {
 		return ""
@@ -382,14 +413,15 @@ func extractToolUse(content json.RawMessage) string {
 	return ""
 }
 
-var xmlTagRe = regexp.MustCompile(`<[^>]+>`)
+var (
+	xmlTagRe     = regexp.MustCompile(`<[^>]+>`)
+	fullTagLineRe = regexp.MustCompile(`(?m)^<\w[^>]*>.*?</\w+>\s*`)
+)
 
 // stripXMLTags removes XML/HTML tags and their content when the tag wraps the entire
 // line (like <ide_opened_file>...</ide_opened_file>), then removes any remaining tags.
 func stripXMLTags(s string) string {
-	// Remove full tagged lines (e.g. "<ide_opened_file>...text...</ide_opened_file>")
-	s = regexp.MustCompile(`(?m)^<\w[^>]*>.*?</\w+>\s*`).ReplaceAllString(s, "")
-	// Remove any remaining tags
+	s = fullTagLineRe.ReplaceAllString(s, "")
 	s = xmlTagRe.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
 }
@@ -403,23 +435,3 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-1] + "…"
 }
 
-// DecodePath converts an encoded project directory name back to a filesystem path.
-// E.g., "c--Users-fabio-repov2" -> "c:\Users\fabio\repov2" (Windows)
-// The encoding replaces : with - and path separators with -
-func DecodePath(encoded string) string {
-	if len(encoded) < 2 {
-		return encoded
-	}
-
-	// Handle drive letter: "c--" means "c:\"
-	if len(encoded) >= 3 && encoded[1] == '-' && encoded[2] == '-' {
-		drive := string(encoded[0])
-		rest := encoded[3:]
-		parts := strings.Split(rest, "-")
-		sep := string(filepath.Separator)
-		return drive + ":" + sep + strings.Join(parts, sep)
-	}
-
-	// Unix-style: just replace - with /
-	return "/" + strings.ReplaceAll(encoded, "-", "/")
-}

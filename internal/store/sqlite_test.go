@@ -89,15 +89,22 @@ func TestSaveUsageSnapshot(t *testing.T) {
 		t.Fatalf("SaveUsageSnapshot: %v", err)
 	}
 
-	snapshots, err := st.GetUsageSnapshots(24)
+	var count int
+	err := st.db.QueryRow("SELECT COUNT(*) FROM usage_snapshots").Scan(&count)
 	if err != nil {
-		t.Fatalf("GetUsageSnapshots: %v", err)
+		t.Fatalf("query snapshot count: %v", err)
 	}
-	if len(snapshots) != 1 {
-		t.Fatalf("expected 1 snapshot, got %d", len(snapshots))
+	if count != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", count)
 	}
-	if snapshots[0]["session_pct"] != 50.0 {
-		t.Errorf("session_pct = %v, want 50.0", snapshots[0]["session_pct"])
+
+	var sessionPct float64
+	err = st.db.QueryRow("SELECT session_pct FROM usage_snapshots LIMIT 1").Scan(&sessionPct)
+	if err != nil {
+		t.Fatalf("query session_pct: %v", err)
+	}
+	if sessionPct != 50.0 {
+		t.Errorf("session_pct = %v, want 50.0", sessionPct)
 	}
 }
 

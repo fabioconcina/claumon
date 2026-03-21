@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -204,11 +203,6 @@ func readMemoryFile(path, project, category string) *MemoryFile {
 	}
 }
 
-// ReadFile reads and renders a single memory file by path.
-func ReadFile(path, project, category string) *MemoryFile {
-	return readMemoryFile(path, project, category)
-}
-
 // DecodePath converts an encoded project directory name back to a filesystem path.
 func DecodePath(encoded string) string {
 	if len(encoded) < 2 {
@@ -246,39 +240,3 @@ func SearchMemories(memories []*MemoryFile, query string) []*MemoryFile {
 	return results
 }
 
-// WatchPaths returns all paths that should be watched for memory file changes.
-func WatchPaths(claudeDir string) []string {
-	var paths []string
-
-	paths = append(paths, claudeDir)
-
-	if _, err := os.Stat(filepath.Join(claudeDir, "rules")); err == nil {
-		paths = append(paths, filepath.Join(claudeDir, "rules"))
-	}
-
-	projectsDir := filepath.Join(claudeDir, "projects")
-	entries, err := os.ReadDir(projectsDir)
-	if err != nil {
-		return paths
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		projDir := filepath.Join(projectsDir, e.Name())
-		paths = append(paths, projDir)
-
-		memDir := filepath.Join(projDir, "memory")
-		if _, err := os.Stat(memDir); err == nil {
-			paths = append(paths, memDir)
-		}
-	}
-
-	return paths
-}
-
-// ModTimeFormatted returns a human-readable modification time.
-func (m *MemoryFile) ModTimeFormatted() string {
-	return time.Unix(m.ModTime, 0).Format("2006-01-02 15:04:05")
-}

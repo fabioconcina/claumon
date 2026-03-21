@@ -58,7 +58,10 @@ func loadConfig() Config {
 	if err != nil {
 		return cfg
 	}
-	json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		log.Printf("WARNING: Failed to parse config file: %v (using defaults)", err)
+		return cfg
+	}
 
 	// Re-apply defaults for zero values
 	if cfg.Port == 0 {
@@ -156,6 +159,20 @@ func main() {
 		go w.Start(ctx)
 	}
 
+	// Refresh pricing daily
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pricing.RefreshAsync(pricingTable, cfg.PricingOverrides)
+			}
+		}
+	}()
+
 	// Historical backfill (runs once at startup, in background)
 	go backfillHistory(cfg.ClaudeDir, st)
 
@@ -240,7 +257,9 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 	}
 
 	// Save snapshot
-	st.SaveUsageSnapshot(usage.SessionPercent, usage.WeeklyPercent, usage.SessionResetAt, usage.WeeklyResetAt, usage.Raw)
+	if err := st.SaveUsageSnapshot(usage.SessionPercent, usage.WeeklyPercent, usage.SessionResetAt, usage.WeeklyResetAt, usage.Raw); err != nil {
+		log.Printf("[poll] Failed to save usage snapshot: %v", err)
+	}
 
 	// Broadcast to SSE clients
 	evt := map[string]interface{}{
@@ -251,11 +270,11 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 	}
 	if usage.WeeklySonnetPct != nil {
 		evt["weekly_sonnet_pct"] = *usage.WeeklySonnetPct
-		evt["weekly_sonnet_reset"] = formatDuration(parseDuration(usage.WeeklySonnetReset))
+		evt["weekly_sonnet_reset"] = formatDuration(api.ParseResetDuration(usage.WeeklySonnetReset))
 	}
 	if usage.WeeklyOpusPct != nil {
 		evt["weekly_opus_pct"] = *usage.WeeklyOpusPct
-		evt["weekly_opus_reset"] = formatDuration(parseDuration(usage.WeeklyOpusReset))
+		evt["weekly_opus_reset"] = formatDuration(api.ParseResetDuration(usage.WeeklyOpusReset))
 	}
 	if usage.ExtraUsageEnabled {
 		evt["extra_usage_enabled"] = true
@@ -273,21 +292,6 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 	return nil
 }
 
-func parseDuration(s string) time.Duration {
-	if s == "" {
-		return 0
-	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return 0
-	}
-	d := time.Until(t)
-	if d < 0 {
-		return 0
-	}
-	return d
-}
-
 func formatDuration(d time.Duration) string {
 	if d <= 0 {
 		return ""
@@ -300,31 +304,28 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm", m)
 }
 
+func toStoreAggregate(date string, sessions []*parser.SessionSummary) store.DailyAggregate {
+	a := parser.AggregateSessions(sessions)
+	return store.DailyAggregate{
+		Date:              date,
+		InputTokens:       a.InputTokens,
+		OutputTokens:      a.OutputTokens,
+		CacheReadTokens:   a.CacheReadTokens,
+		CacheCreateTokens: a.CacheCreateTokens,
+		CostUSD:           a.CostUSD,
+		SessionCount:      a.SessionCount,
+		MessageCount:      a.MessageCount,
+	}
+}
+
 func updateDailyAggregate(claudeDir string, st *store.Store) {
 	sessions, err := parser.DiscoverTodaySessions(claudeDir)
 	if err != nil {
 		return
 	}
-
-	today := time.Now().Format("2006-01-02")
-	var agg store.DailyAggregate
-	agg.Date = today
-
-	seen := make(map[string]bool)
-	for _, s := range sessions {
-		agg.InputTokens += s.InputTokens
-		agg.OutputTokens += s.OutputTokens
-		agg.CacheReadTokens += s.CacheReadTokens
-		agg.CacheCreateTokens += s.CacheCreateTokens
-		agg.CostUSD += s.EstimatedCostUSD
-		agg.MessageCount += s.MessageCount
-		if !seen[s.ID] {
-			seen[s.ID] = true
-			agg.SessionCount++
-		}
+	if err := st.UpsertDailyAggregate(toStoreAggregate(time.Now().Format("2006-01-02"), sessions)); err != nil {
+		log.Printf("[aggregate] Failed to upsert daily aggregate: %v", err)
 	}
-
-	st.UpsertDailyAggregate(agg)
 }
 
 func backfillHistory(claudeDir string, st *store.Store) {
@@ -348,24 +349,9 @@ func backfillHistory(claudeDir string, st *store.Store) {
 
 	count := 0
 	for date, dateSessions := range byDate {
-		var agg store.DailyAggregate
-		agg.Date = date
-
-		seen := make(map[string]bool)
-		for _, s := range dateSessions {
-			agg.InputTokens += s.InputTokens
-			agg.OutputTokens += s.OutputTokens
-			agg.CacheReadTokens += s.CacheReadTokens
-			agg.CacheCreateTokens += s.CacheCreateTokens
-			agg.CostUSD += s.EstimatedCostUSD
-			agg.MessageCount += s.MessageCount
-			if !seen[s.ID] {
-				seen[s.ID] = true
-				agg.SessionCount++
-			}
+		if err := st.UpsertDailyAggregate(toStoreAggregate(date, dateSessions)); err != nil {
+			log.Printf("[backfill] Failed to upsert aggregate for %s: %v", date, err)
 		}
-
-		st.UpsertDailyAggregate(agg)
 		count++
 	}
 

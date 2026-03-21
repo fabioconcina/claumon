@@ -100,27 +100,6 @@ func TestEstimateCost(t *testing.T) {
 	}
 }
 
-func TestDecodePath(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"Users-fabio-Projects-tokukan", "/Users/fabio/Projects/tokukan"},
-		{"c--Users-fabio-repov2", "c:" + string(filepath.Separator) + "Users" + string(filepath.Separator) + "fabio" + string(filepath.Separator) + "repov2"},
-		{"a", "a"},
-		{"", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := DecodePath(tt.input)
-			if got != tt.want {
-				t.Errorf("DecodePath(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestTruncate(t *testing.T) {
 	tests := []struct {
 		input  string
