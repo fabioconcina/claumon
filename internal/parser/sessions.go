@@ -3,25 +3,24 @@ package parser
 import (
 	"bufio"
 	"encoding/json"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/fabioconcina/claumon/internal/pricing"
 )
 
-// Model pricing per million tokens (USD)
-var modelPricing = map[string]struct {
-	Input, Output, CacheRead, CacheWrite float64
-}{
-	"claude-opus-4-6":    {15.0, 75.0, 1.50, 18.75},
-	"claude-sonnet-4-6":  {3.0, 15.0, 0.30, 3.75},
-	"claude-haiku-4-5":   {0.80, 4.0, 0.08, 1.00},
-	"claude-sonnet-4-5":  {3.0, 15.0, 0.30, 3.75},
-	"claude-sonnet-4-0":  {3.0, 15.0, 0.30, 3.75},
-	"claude-haiku-3-5":   {0.80, 4.0, 0.08, 1.00},
-}
+// warnedModels tracks models we've already warned about to avoid log spam.
+var warnedModels sync.Map
+
+// pricingTable is the shared pricing table, set via SetPricingTable.
+// If nil, a zero-cost fallback is used (should not happen in practice).
+var pricingTable *pricing.Table
 
 type SessionSummary struct {
 	ID                string    `json:"id"`
@@ -155,30 +154,45 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 	return summary, scanner.Err()
 }
 
+// SetPricingTable sets the shared pricing table used for cost estimation.
+func SetPricingTable(t *pricing.Table) {
+	pricingTable = t
+}
+
 func estimateCost(s *SessionSummary) float64 {
-	model := normalizeModel(s.Model)
-	pricing, ok := modelPricing[model]
-	if !ok {
-		// Default to sonnet pricing
-		pricing = modelPricing["claude-sonnet-4-6"]
+	if pricingTable == nil {
+		return 0
 	}
 
-	cost := float64(s.InputTokens)/1e6*pricing.Input +
-		float64(s.OutputTokens)/1e6*pricing.Output +
-		float64(s.CacheReadTokens)/1e6*pricing.CacheRead +
-		float64(s.CacheCreateTokens)/1e6*pricing.CacheWrite
+	model := normalizeModel(s.Model)
+	p, ok := pricingTable.Get(model)
+	if !ok {
+		if _, warned := warnedModels.LoadOrStore(s.Model, true); !warned {
+			log.Printf("[pricing] Unknown model %q — using sonnet pricing. Update pricing.json?", s.Model)
+		}
+		p, _ = pricingTable.Get("claude-sonnet-4-6")
+	}
+
+	cost := float64(s.InputTokens)/1e6*p.Input +
+		float64(s.OutputTokens)/1e6*p.Output +
+		float64(s.CacheReadTokens)/1e6*p.CacheRead +
+		float64(s.CacheCreateTokens)/1e6*p.CacheWrite5m
 
 	return math.Round(cost*10000) / 10000
 }
 
 func normalizeModel(model string) string {
+	if pricingTable == nil {
+		return "claude-sonnet-4-6"
+	}
+
 	// Strip date suffixes like "claude-sonnet-4-6-20250514"
-	for key := range modelPricing {
+	for key := range pricingTable.Models() {
 		if strings.HasPrefix(model, key) {
 			return key
 		}
 	}
-	// Try matching by family
+	// Try matching by family — pick the latest known model in each family
 	switch {
 	case strings.Contains(model, "opus"):
 		return "claude-opus-4-6"

@@ -17,6 +17,7 @@ import (
 	"github.com/fabioconcina/claumon/internal/api"
 	"github.com/fabioconcina/claumon/internal/auth"
 	"github.com/fabioconcina/claumon/internal/parser"
+	"github.com/fabioconcina/claumon/internal/pricing"
 	"github.com/fabioconcina/claumon/internal/server"
 	"github.com/fabioconcina/claumon/internal/store"
 	"github.com/fabioconcina/claumon/internal/watcher"
@@ -26,11 +27,12 @@ import (
 var webFS embed.FS
 
 type Config struct {
-	Port             int    `json:"port"`
-	PollIntervalSecs int    `json:"poll_interval_seconds"`
-	CredentialsPath  string `json:"credentials_path"`
-	ClaudeDir        string `json:"claude_dir"`
-	DBPath           string `json:"db_path"`
+	Port             int                                `json:"port"`
+	PollIntervalSecs int                                `json:"poll_interval_seconds"`
+	CredentialsPath  string                             `json:"credentials_path"`
+	ClaudeDir        string                             `json:"claude_dir"`
+	DBPath           string                             `json:"db_path"`
+	PricingOverrides map[string]pricing.ModelPricing     `json:"pricing_overrides,omitempty"`
 }
 
 func defaultConfig() Config {
@@ -78,6 +80,11 @@ func main() {
 	cfg := loadConfig()
 
 	log.Printf("claumon starting — port=%d claude_dir=%s", cfg.Port, cfg.ClaudeDir)
+
+	// Load pricing table (embedded → cache → remote → config overrides)
+	pricingTable := pricing.Load(cfg.PricingOverrides)
+	parser.SetPricingTable(pricingTable)
+	log.Printf("Loaded pricing for %d models", len(pricingTable.Models()))
 
 	// Load credentials
 	creds, err := auth.Load(cfg.ClaudeDir, cfg.CredentialsPath)

@@ -5,7 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/fabioconcina/claumon/internal/pricing"
 )
+
+func TestMain(m *testing.M) {
+	// Initialize pricing table from embedded data for all tests.
+	SetPricingTable(pricing.Load(nil))
+	os.Exit(m.Run())
+}
 
 func TestNormalizeModel(t *testing.T) {
 	tests := []struct {
@@ -51,7 +59,7 @@ func TestEstimateCost(t *testing.T) {
 				InputTokens:  1_000_000,
 				OutputTokens: 1_000_000,
 			},
-			want: 15.0 + 75.0, // $15/M input + $75/M output
+			want: 5.0 + 25.0, // $5/M input + $25/M output
 		},
 		{
 			name: "sonnet pricing with cache",
