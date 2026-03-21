@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -111,6 +112,27 @@ func (s *Store) UpsertDailyAggregate(agg DailyAggregate) error {
 	`, agg.Date, agg.InputTokens, agg.OutputTokens, agg.CacheReadTokens, agg.CacheCreateTokens, agg.CostUSD, agg.SessionCount, agg.MessageCount)
 	if err != nil {
 		return fmt.Errorf("upserting daily aggregate for %s: %w", agg.Date, err)
+	}
+	return nil
+}
+
+func (s *Store) Prune(retentionDays int) error {
+	cutoff := time.Now().AddDate(0, 0, -retentionDays).Format("2006-01-02")
+
+	res, err := s.db.Exec("DELETE FROM usage_snapshots WHERE timestamp < ?", cutoff)
+	if err != nil {
+		return fmt.Errorf("pruning snapshots: %w", err)
+	}
+	snapshots, _ := res.RowsAffected()
+
+	res, err = s.db.Exec("DELETE FROM daily_aggregates WHERE date < ?", cutoff)
+	if err != nil {
+		return fmt.Errorf("pruning aggregates: %w", err)
+	}
+	aggregates, _ := res.RowsAffected()
+
+	if snapshots > 0 || aggregates > 0 {
+		log.Printf("[prune] Removed %d snapshots and %d aggregates older than %s", snapshots, aggregates, cutoff)
 	}
 	return nil
 }

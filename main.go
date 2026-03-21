@@ -35,6 +35,7 @@ type Config struct {
 	CredentialsPath  string                             `json:"credentials_path"`
 	ClaudeDir        string                             `json:"claude_dir"`
 	DBPath           string                             `json:"db_path"`
+	RetentionDays    int                                `json:"retention_days"`
 	PricingOverrides map[string]pricing.ModelPricing     `json:"pricing_overrides,omitempty"`
 }
 
@@ -46,6 +47,7 @@ func defaultConfig() Config {
 		CredentialsPath:  filepath.Join(home, ".claude", ".credentials.json"),
 		ClaudeDir:        filepath.Join(home, ".claude"),
 		DBPath:           filepath.Join(home, ".claumon", "usage.db"),
+		RetentionDays:    90,
 	}
 }
 
@@ -75,6 +77,9 @@ func loadConfig() Config {
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = filepath.Join(home, ".claumon", "usage.db")
+	}
+	if cfg.RetentionDays == 0 {
+		cfg.RetentionDays = 90
 	}
 	return cfg
 }
@@ -159,7 +164,7 @@ func main() {
 		go w.Start(ctx)
 	}
 
-	// Refresh pricing daily
+	// Daily maintenance: refresh pricing and prune old data
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
@@ -169,12 +174,20 @@ func main() {
 				return
 			case <-ticker.C:
 				pricing.RefreshAsync(pricingTable, cfg.PricingOverrides)
+				if err := st.Prune(cfg.RetentionDays); err != nil {
+					log.Printf("[prune] Error: %v", err)
+				}
 			}
 		}
 	}()
 
-	// Historical backfill (runs once at startup, in background)
-	go backfillHistory(cfg.ClaudeDir, st)
+	// Historical backfill and initial prune (runs once at startup, in background)
+	go func() {
+		backfillHistory(cfg.ClaudeDir, st)
+		if err := st.Prune(cfg.RetentionDays); err != nil {
+			log.Printf("[prune] Error: %v", err)
+		}
+	}()
 
 	// Initial daily aggregate
 	updateDailyAggregate(cfg.ClaudeDir, st)
