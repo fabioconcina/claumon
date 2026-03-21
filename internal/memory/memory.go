@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer/html"
 )
 
 type MemoryFile struct {
@@ -24,7 +26,10 @@ type MemoryFile struct {
 	FMType        string `json:"fm_type,omitempty"` // user, feedback, project, reference
 }
 
-var md = goldmark.New()
+var md = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithRendererOptions(html.WithHardWraps()),
+)
 
 func RenderMarkdown(source string) string {
 	var buf bytes.Buffer

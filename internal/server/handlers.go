@@ -17,14 +17,16 @@ type Handlers struct {
 	memories         *MemoryCache
 	usageMu          sync.RWMutex
 	latestUsage      map[string]interface{}
+	Version          string
 	SubscriptionType string
 	RateLimitTier    string
 }
 
 type MemoryCache struct {
-	files     []*memory.MemoryFile
-	staleness *memory.StalenessReport
-	graph     *memory.GraphData
+	files         []*memory.MemoryFile
+	staleness     *memory.StalenessReport
+	graph         *memory.GraphData
+	consolidation *memory.ConsolidationReport
 }
 
 func NewHandlers(claudeDir string, st *store.Store) *Handlers {
@@ -43,6 +45,7 @@ func (h *Handlers) RefreshMemories() {
 		h.memories.files = files
 		h.memories.staleness = memory.CheckStaleness(files)
 		h.memories.graph = memory.BuildGraph(files)
+		h.memories.consolidation = memory.FindConsolidation(files)
 	}
 }
 
@@ -147,6 +150,14 @@ func (h *Handlers) HandleMemoriesGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, h.memories.graph)
 }
 
+func (h *Handlers) HandleMemoriesConsolidation(w http.ResponseWriter, r *http.Request) {
+	if h.memories.consolidation == nil {
+		writeJSON(w, &memory.ConsolidationReport{Groups: []memory.ConsolidationGroup{}, CheckedAt: 0})
+		return
+	}
+	writeJSON(w, h.memories.consolidation)
+}
+
 func (h *Handlers) HandleMemoriesSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	results := memory.SearchMemories(h.memories.files, q)
@@ -183,6 +194,7 @@ func (h *Handlers) HandleSessionDetail(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	isAPI := h.SubscriptionType == "" || h.SubscriptionType == "api"
 	writeJSON(w, map[string]interface{}{
+		"version":           h.Version,
 		"subscription_type": h.SubscriptionType,
 		"rate_limit_tier":   h.RateLimitTier,
 		"is_api_billing":    isAPI,

@@ -71,6 +71,8 @@ func loadConfig() Config {
 	return cfg
 }
 
+var version = "dev"
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	cfg := loadConfig()
@@ -98,6 +100,7 @@ func main() {
 	// Setup HTTP server
 	webContent, _ := fs.Sub(webFS, "web")
 	srv := server.New(cfg.ClaudeDir, st, webContent)
+	srv.Handlers.Version = version
 	srv.Handlers.SubscriptionType = creds.SubscriptionType
 	srv.Handlers.RateLimitTier = creds.RateLimitTier
 

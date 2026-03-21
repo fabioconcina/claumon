@@ -1,14 +1,8 @@
-Initial release of claumon — a minimal Claude Code dashboard.
+## New
 
-## Features
-
-- **Rate limit gauges** — session (5h) and weekly utilization with reset countdowns, per-model quotas, extra usage credits
-- **Token usage** — per-session breakdown of input/output/cache tokens with estimated API cost
-- **Session browser** — active sessions table with detail view showing full message timeline
-- **Historical trends** — 14-day charts and 24-hour activity heatmaps backed by SQLite
-- **Memory browser** — search, filter, and inspect all memory files with staleness alerts
-- **Memory graph** — interactive visualization of cross-project relationships
-- **Live updates** — real-time via SSE, no polling or manual refresh
+- **Memory consolidation** — detects duplicate memories across projects using similarity scoring (shared entities, text bigrams, frontmatter type). Shows actionable suggestions with a "Copy prompt" button to paste into Claude Code for merging.
+- **Version display** — app version shown in the topbar, set via git tags at build time
+- **GFM markdown rendering** — memory files now render with GitHub Flavored Markdown (tables, strikethrough) and hard line breaks
 
 ## Install
 

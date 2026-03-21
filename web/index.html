@@ -419,6 +419,72 @@ tr.clickable { cursor: pointer; }
 .alert-icon.warning { color: var(--yellow); }
 .alert-message { font-size: 13px; }
 .alert-path { font-family: monospace; font-size: 12px; color: var(--accent); }
+
+/* Consolidation suggestions */
+.consolidation-banner {
+  background: var(--bg-surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+}
+.consolidation-banner h3 {
+  font-size: 12px; color: var(--text-dim); margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.consolidation-group {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.consolidation-group:last-child { border-bottom: none; }
+.consolidation-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.consolidation-score {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.consolidation-reason { font-size: 13px; }
+.consolidation-files {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 6px 0 6px 8px;
+  font-family: monospace; font-size: 12px;
+}
+.consolidation-keywords {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin: 4px 0 6px 8px;
+}
+.consolidation-keyword {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.consolidation-copy {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: border-color 0.15s;
+}
+.consolidation-copy:hover { border-color: var(--accent); }
+.consolidation-copy.copied {
+  border-color: var(--green);
+  color: var(--green);
+}
+
 .tab-badge {
   display: inline-block;
   background: var(--red);
@@ -490,6 +556,7 @@ tr.clickable { cursor: pointer; }
 <div class="topbar">
   <div class="topbar-left">
     <h1>claumon</h1>
+    <span id="app-version" style="font-size:11px;color:var(--text-dim);margin-left:6px"></span>
     <span class="status-dot" id="statusDot" title="SSE disconnected"></span>
     <span style="font-size:12px;color:var(--text-dim)" id="connStatus">Connecting...</span>
   </div>
@@ -629,6 +696,7 @@ tr.clickable { cursor: pointer; }
   <!-- Memories Tab -->
   <div class="tab-content" id="tab-memories">
     <div id="staleness-alerts" class="staleness-banner" style="display:none"></div>
+    <div id="consolidation-alerts" class="consolidation-banner" style="display:none"></div>
     <div id="memories-stats" class="memories-stats"></div>
     <div class="memories-toolbar">
       <div class="memories-search">
@@ -1278,6 +1346,63 @@ function renderStalenessAlerts(data) {
   `;
 }
 
+// --- Consolidation Suggestions ---
+let consolidationData = null;
+
+function fetchConsolidation() {
+  fetch('/api/memories/consolidation').then(r => r.json()).then(data => {
+    consolidationData = data;
+    renderConsolidation(data);
+  }).catch(() => {});
+}
+
+function renderConsolidation(data) {
+  const container = document.getElementById('consolidation-alerts');
+  if (!data.groups || !data.groups.length) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  container.innerHTML = `
+    <h3>Consolidation Suggestions (${data.groups.length})</h3>
+    ${data.groups.map(g => `
+      <div class="consolidation-group">
+        <div class="consolidation-header">
+          <span class="consolidation-score">${Math.round(g.max_score * 100)}% similar</span>
+          <span class="consolidation-reason">${escHtml(g.reason)}</span>
+          <button class="consolidation-copy" onclick="copyPrompt(this, ${g.id})" title="Copy Claude Code prompt to clipboard">Copy prompt</button>
+        </div>
+        <div class="consolidation-files">
+          ${g.files.map(f => `
+            <a class="vscode-link" href="${vscodeUrl(f.path)}" style="opacity:1;margin:0">
+              <span style="color:var(--text-dim)">${escHtml(f.project ? f.project.split('/').pop() : 'global')}:</span>
+              ${escHtml(fileName(f.path))}
+            </a>
+          `).join('')}
+        </div>
+        ${g.shared_keywords.length ? `
+          <div class="consolidation-keywords">
+            ${g.shared_keywords.map(k => `<span class="consolidation-keyword">${escHtml(k)}</span>`).join('')}
+          </div>
+        ` : ''}
+        <textarea id="prompt-${g.id}" style="display:none">${escHtml(g.prompt)}</textarea>
+      </div>
+    `).join('')}
+  `;
+}
+
+function copyPrompt(btn, id) {
+  const textarea = document.getElementById('prompt-' + id);
+  navigator.clipboard.writeText(textarea.value).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy prompt';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
 // --- Memory Graph ---
 let graphData = null;
 let graphProjectFilters = new Set(); // empty = show all
@@ -1654,6 +1779,7 @@ function fetchAll() {
   }).catch(() => {});
 
   fetchStaleness();
+  fetchConsolidation();
   fetchGraph();
 }
 
@@ -1704,6 +1830,7 @@ function connectSSE() {
       }
     });
     fetchStaleness();
+    fetchConsolidation();
     fetchGraph();
   });
 
@@ -1714,6 +1841,9 @@ function connectSSE() {
 
 // --- Init ---
 fetch('/api/info').then(r => r.json()).then(info => {
+  if (info.version) {
+    document.getElementById('app-version').textContent = info.version;
+  }
   if (info.is_api_billing) {
     document.querySelector('#card-cost').parentElement.querySelector('.card-label').textContent = 'Estimated Cost';
     document.querySelector('#card-cost').parentElement.querySelector('.card-sub').textContent = 'today';
