@@ -298,6 +298,24 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   color: var(--text-dim);
 }
+.platform-card .dl-links {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.platform-card .dl-links a {
+  font-size: 11px;
+  color: var(--accent);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.platform-card .dl-links a:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
 
 /* Footer */
 footer {
@@ -427,14 +445,26 @@ footer a { color: var(--text); }
     <div class="platform-card">
       <h3>macOS</h3>
       <p>Apple Silicon &amp; Intel</p>
+      <div class="dl-links">
+        <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-arm64">arm64</a>
+        <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-amd64">amd64</a>
+      </div>
     </div>
     <div class="platform-card">
       <h3>Linux</h3>
       <p>x86_64 &amp; arm64</p>
+      <div class="dl-links">
+        <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-linux-arm64">arm64</a>
+        <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-linux-amd64">amd64</a>
+      </div>
     </div>
     <div class="platform-card">
       <h3>Windows</h3>
       <p>x86_64 &amp; arm64</p>
+      <div class="dl-links">
+        <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-windows-arm64.exe">arm64</a>
+        <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-windows-amd64.exe">amd64</a>
+      </div>
     </div>
   </div>
 </section>
