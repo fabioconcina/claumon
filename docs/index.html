@@ -289,6 +289,9 @@ a:hover { text-decoration: underline; }
   flex: 1;
   min-width: 160px;
 }
+.platform-card img {
+  margin-bottom: 12px;
+}
 .platform-card h3 {
   font-size: 14px;
   color: var(--text-bright);
@@ -454,24 +457,27 @@ footer a { color: var(--text); }
   <p>No CGO, no native dependencies. One binary per platform.</p>
   <div class="platform-cards">
     <div class="platform-card">
+      <img src="https://cdn.simpleicons.org/apple/d4c5b9" width="32" height="32" alt="macOS">
       <h3>macOS</h3>
       <p>Apple Silicon &amp; Intel</p>
       <div class="dl-links">
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-arm64">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-amd64">amd64</a>
       </div>
-      <div class="dl-note"><code>chmod +x claumon && xattr -d com.apple.quarantine claumon</code></div>
+      <div class="dl-note"><code>chmod +x claumon-darwin-* && xattr -d com.apple.quarantine claumon-darwin-*</code></div>
     </div>
     <div class="platform-card">
+      <img src="https://cdn.simpleicons.org/linux/d4c5b9" width="32" height="32" alt="Linux">
       <h3>Linux</h3>
       <p>x86_64 &amp; arm64</p>
       <div class="dl-links">
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-linux-arm64">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-linux-amd64">amd64</a>
       </div>
-      <div class="dl-note"><code>chmod +x claumon</code></div>
+      <div class="dl-note"><code>chmod +x claumon-linux-*</code></div>
     </div>
     <div class="platform-card">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="#d4c5b9" xmlns="http://www.w3.org/2000/svg"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
       <h3>Windows</h3>
       <p>x86_64 &amp; arm64</p>
       <div class="dl-links">
