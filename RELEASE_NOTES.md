@@ -1,14 +1,19 @@
 ## New
 
-- **Auto-updating pricing** — model pricing is now loaded from a layered system: embedded defaults → local cache → remote fetch from GitHub (daily) → config overrides. No more stale prices when new models are released.
-- **Fixed model pricing** — corrected Opus 4.6 ($15→$5/MTok input) and Haiku 4.5 ($0.80→$1/MTok input) rates, added all current and legacy models with full cache pricing (5-min and 1-hour tiers)
-- **Unknown model warnings** — logs a warning when sessions use a model not in the pricing table, so you know when to update
+- **Wasted token detection** — sessions are flagged when cache efficiency is low (<50% reuse on large sessions) or when lots of tokens are spent without any file edits
+- **Cache efficiency metric** — `cache_read / (input + cache_read + cache_create)` properly accounts for expensive cache creation costs
+- **Efficiency column** in sessions table with cache reuse % and waste badges
+- **Billable-only toggle** on daily tokens chart to see just the cost-driving tokens (input, output, cache write)
+- **DB pruning** with configurable retention policy
+- **Keyboard shortcuts** for tab switching and memory search
+- **`--open` flag** to auto-launch browser on start
 
 ## Improved
 
-- **Usage API backoff** — exponential backoff (up to 10min) when the usage API is rate-limited, instead of hammering the endpoint
-- **Cost display** — truncated to single decimal place for cleaner dashboard readability
-- **Graph and memory fixes** — fixed graph node overlaps, broken memory links, session title extraction, and slow shutdown
+- Simplified daily tokens chart (single bar) with stacked billable breakdown on toggle
+- Fixed indistinguishable Input/Cache Write legend colors
+- Cache reuse % and file edit status shown in session detail panel
+- Multiple rounds of tech debt reduction: deduplicated helpers, better error wrapping, mutex for memory cache
 
 ## Install
 
