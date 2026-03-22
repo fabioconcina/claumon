@@ -316,6 +316,17 @@ a:hover { text-decoration: underline; }
   background: var(--bg-hover);
   text-decoration: none;
 }
+.platform-card .dl-note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.platform-card .dl-note code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+}
 
 /* Footer */
 footer {
@@ -449,6 +460,7 @@ footer a { color: var(--text); }
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-arm64">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-amd64">amd64</a>
       </div>
+      <div class="dl-note"><code>chmod +x claumon && xattr -d com.apple.quarantine claumon</code></div>
     </div>
     <div class="platform-card">
       <h3>Linux</h3>
@@ -457,6 +469,7 @@ footer a { color: var(--text); }
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-linux-arm64">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-linux-amd64">amd64</a>
       </div>
+      <div class="dl-note"><code>chmod +x claumon</code></div>
     </div>
     <div class="platform-card">
       <h3>Windows</h3>
@@ -465,6 +478,7 @@ footer a { color: var(--text); }
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-windows-arm64.exe">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-windows-amd64.exe">amd64</a>
       </div>
+      <div class="dl-note">SmartScreen may warn &mdash; click &ldquo;More info&rdquo; &rarr; &ldquo;Run anyway&rdquo;</div>
     </div>
   </div>
 </section>
