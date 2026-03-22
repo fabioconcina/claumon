@@ -20,8 +20,8 @@ func TestExtractLinks(t *testing.T) {
 
 	expected := []string{"user_prefs.md", "feedback_testing.md", "README.md"}
 	for i, want := range expected {
-		if links[i].Href != want {
-			t.Errorf("link[%d].Href = %q, want %q", i, links[i].Href, want)
+		if links[i] != want {
+			t.Errorf("link[%d] = %q, want %q", i, links[i], want)
 		}
 	}
 }

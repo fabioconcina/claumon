@@ -15,7 +15,8 @@ import (
 type Handlers struct {
 	claudeDir        string
 	store            *store.Store
-	memories         *memoryCache
+	memMu            sync.RWMutex
+	memories         memoryCache
 	usageMu          sync.RWMutex
 	latestUsage      map[string]interface{}
 	Version          string
@@ -34,7 +35,6 @@ func NewHandlers(claudeDir string, st *store.Store) *Handlers {
 	h := &Handlers{
 		claudeDir: claudeDir,
 		store:     st,
-		memories:  &memoryCache{},
 	}
 	h.RefreshMemories()
 	return h
@@ -46,10 +46,22 @@ func (h *Handlers) RefreshMemories() {
 		log.Printf("[memory] Failed to discover memories: %v", err)
 		return
 	}
-	h.memories.files = files
-	h.memories.staleness = memory.CheckStaleness(files)
-	h.memories.graph = memory.BuildGraph(files)
-	h.memories.consolidation = memory.FindConsolidation(files)
+	mc := memoryCache{
+		files:         files,
+		staleness:     memory.CheckStaleness(files),
+		graph:         memory.BuildGraph(files),
+		consolidation: memory.FindConsolidation(files),
+	}
+	h.memMu.Lock()
+	h.memories = mc
+	h.memMu.Unlock()
+}
+
+// getMemories returns a snapshot of the memory cache under the read lock.
+func (h *Handlers) getMemories() memoryCache {
+	h.memMu.RLock()
+	defer h.memMu.RUnlock()
+	return h.memories
 }
 
 func (h *Handlers) SetLatestUsage(data map[string]interface{}) {
@@ -116,7 +128,8 @@ func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {
-	files := h.memories.files
+	mc := h.getMemories()
+	files := mc.files
 	if files == nil {
 		files = []*memory.MemoryFile{}
 	}
@@ -124,34 +137,38 @@ func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleMemoriesStaleness(w http.ResponseWriter, r *http.Request) {
-	if h.memories.staleness == nil {
+	mc := h.getMemories()
+	if mc.staleness == nil {
 		writeJSON(w, &memory.StalenessReport{Alerts: []memory.StalenessAlert{}, CheckedAt: 0})
 		return
 	}
-	writeJSON(w, h.memories.staleness)
+	writeJSON(w, mc.staleness)
 }
 
 func (h *Handlers) HandleMemoriesGraph(w http.ResponseWriter, r *http.Request) {
-	if h.memories.graph == nil {
+	mc := h.getMemories()
+	if mc.graph == nil {
 		writeJSON(w, &memory.GraphData{
 			Nodes: []memory.GraphNode{}, Edges: []memory.GraphEdge{}, Groups: []memory.GraphGroup{},
 		})
 		return
 	}
-	writeJSON(w, h.memories.graph)
+	writeJSON(w, mc.graph)
 }
 
 func (h *Handlers) HandleMemoriesConsolidation(w http.ResponseWriter, r *http.Request) {
-	if h.memories.consolidation == nil {
+	mc := h.getMemories()
+	if mc.consolidation == nil {
 		writeJSON(w, &memory.ConsolidationReport{Groups: []memory.ConsolidationGroup{}, CheckedAt: 0})
 		return
 	}
-	writeJSON(w, h.memories.consolidation)
+	writeJSON(w, mc.consolidation)
 }
 
 func (h *Handlers) HandleMemoriesSearch(w http.ResponseWriter, r *http.Request) {
+	mc := h.getMemories()
 	q := r.URL.Query().Get("q")
-	results := memory.SearchMemories(h.memories.files, q)
+	results := memory.SearchMemories(mc.files, q)
 	if results == nil {
 		results = []*memory.MemoryFile{}
 	}

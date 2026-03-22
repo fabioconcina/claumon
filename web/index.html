@@ -172,6 +172,14 @@ td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--border)
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--bg-hover); }
 tr.clickable { cursor: pointer; }
+.waste-badge {
+  display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: rgba(217, 95, 95, 0.15); color: var(--red); border: 1px solid rgba(217, 95, 95, 0.3);
+  margin-left: 6px; vertical-align: middle; cursor: help;
+}
+.waste-badge.warn {
+  background: rgba(232, 200, 114, 0.15); color: var(--yellow); border-color: rgba(232, 200, 114, 0.3);
+}
 .mono { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
 
 /* Session detail panel */
@@ -660,7 +668,11 @@ tr.clickable { cursor: pointer; }
 
     <div class="charts">
       <div class="chart-card">
-        <h3>Daily Tokens (14 days)</h3>
+        <h3 style="display:flex;align-items:center;gap:12px">Daily Tokens (14 days)
+          <label style="font-size:11px;font-weight:400;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="billable-toggle" style="accent-color:var(--accent)"> Billable only
+          </label>
+        </h3>
         <div id="chart-tokens"></div>
       </div>
       <div class="chart-card">
@@ -686,6 +698,7 @@ tr.clickable { cursor: pointer; }
             <th>Tokens</th>
             <th>Cost</th>
             <th>Messages</th>
+            <th>Efficiency</th>
             <th>Last Activity</th>
           </tr>
         </thead>
@@ -897,66 +910,8 @@ function renderBarChart(containerId, data, valueKey, colorFn) {
 }
 
 function renderStackedBarChart(containerId, data) {
-  const container = document.getElementById(containerId);
-  if (!data.length) {
-    container.innerHTML = '<div class="empty-state">No data yet</div>';
-    return;
-  }
-
-  const maxVal = Math.max(...data.map(d =>
-    (d.input_tokens||0) + (d.output_tokens||0) + (d.cache_read_tokens||0) + (d.cache_create_tokens||0)
-  ), 1);
-
-  const w = 600, h = 180, pad = 30, barGap = 4;
-  const barW = Math.max(8, (w - pad * 2) / data.length - barGap);
-
-  let svg = `<svg viewBox="0 0 ${w} ${h}" class="bar-chart" preserveAspectRatio="xMidYMid meet">`;
-
-  for (let i = 0; i <= 4; i++) {
-    const y = pad + (h - pad * 2) * (1 - i/4);
-    svg += `<line x1="${pad}" y1="${y}" x2="${w-10}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
-    svg += `<text x="${pad-4}" y="${y+3}" class="bar-value" text-anchor="end">${fmtNum(Math.round(maxVal * i / 4))}</text>`;
-  }
-
-  const colors = ['var(--accent)', 'var(--purple)', 'var(--teal)', 'var(--orange)'];
-  const keys = ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_create_tokens'];
-
-  data.forEach((d, i) => {
-    const x = pad + i * (barW + barGap);
-    let cumY = h - pad;
-    const total = keys.reduce((sum, key) => sum + (d[key] || 0), 0);
-
-    keys.forEach((key, ki) => {
-      const val = d[key] || 0;
-      const barH = (val / maxVal) * (h - pad * 2);
-      cumY -= barH;
-      svg += `<rect x="${x}" y="${cumY}" width="${barW}" height="${barH}" fill="${colors[ki]}" opacity="0.85">
-        <title>${key}: ${fmtNum(val)}</title>
-      </rect>`;
-    });
-
-    // Value label on top of bar
-    if (total > 0) {
-      svg += `<text x="${x + barW/2}" y="${cumY - 4}" class="bar-value" text-anchor="middle">${fmtNum(total)}</text>`;
-    }
-
-    if (i % 2 === 0 || data.length <= 7) {
-      svg += `<text x="${x + barW/2}" y="${h - 8}" class="bar-label" text-anchor="middle">${(d.date||'').slice(5)}</text>`;
-    }
-  });
-
-  // Legend
-  const legendY = 10;
-  const labels = ['Input', 'Output', 'Cache Read', 'Cache Write'];
-  let lx = pad;
-  labels.forEach((label, i) => {
-    svg += `<rect x="${lx}" y="${legendY}" width="8" height="8" rx="1" fill="${colors[i]}" opacity="0.85"/>`;
-    svg += `<text x="${lx+12}" y="${legendY+8}" class="bar-label">${label}</text>`;
-    lx += label.length * 6 + 24;
-  });
-
-  svg += '</svg>';
-  container.innerHTML = svg;
+  const totalFn = d => (d.input_tokens||0) + (d.output_tokens||0) + (d.cache_read_tokens||0) + (d.cache_create_tokens||0);
+  renderBarChart(containerId, data, totalFn, () => 'var(--teal)');
 }
 
 // --- Heatmap ---
@@ -988,11 +943,83 @@ function renderHeatmap(sessions) {
   ).join('');
 }
 
+function renderTokensChart() {
+  const billable = document.getElementById('billable-toggle').checked;
+  if (billable) {
+    renderBillableChart('chart-tokens', historyData);
+  } else {
+    renderStackedBarChart('chart-tokens', historyData);
+  }
+}
+
+document.getElementById('billable-toggle').addEventListener('change', renderTokensChart);
+
+function renderBillableChart(containerId, data) {
+  const container = document.getElementById(containerId);
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state">No data yet</div>';
+    return;
+  }
+
+  const keys = ['input_tokens', 'output_tokens', 'cache_create_tokens'];
+  const colors = ['var(--accent)', 'var(--purple)', 'var(--yellow)'];
+  const labels = ['Input', 'Output', 'Cache Write'];
+
+  const maxVal = Math.max(...data.map(d =>
+    keys.reduce((sum, k) => sum + (d[k] || 0), 0)
+  ), 1);
+
+  const w = 600, h = 180, pad = 30, barGap = 4;
+  const barW = Math.max(8, (w - pad * 2) / data.length - barGap);
+
+  let svg = `<svg viewBox="0 0 ${w} ${h}" class="bar-chart" preserveAspectRatio="xMidYMid meet">`;
+
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (h - pad * 2) * (1 - i/4);
+    svg += `<line x1="${pad}" y1="${y}" x2="${w-10}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
+    svg += `<text x="${pad-4}" y="${y+3}" class="bar-value" text-anchor="end">${fmtNum(Math.round(maxVal * i / 4))}</text>`;
+  }
+
+  data.forEach((d, i) => {
+    const x = pad + i * (barW + barGap);
+    let cumY = h - pad;
+    const total = keys.reduce((sum, k) => sum + (d[k] || 0), 0);
+
+    keys.forEach((key, ki) => {
+      const val = d[key] || 0;
+      const barH = (val / maxVal) * (h - pad * 2);
+      cumY -= barH;
+      svg += `<rect x="${x}" y="${cumY}" width="${barW}" height="${barH}" fill="${colors[ki]}" opacity="0.85">
+        <title>${key}: ${fmtNum(val)}</title>
+      </rect>`;
+    });
+
+    if (total > 0) {
+      svg += `<text x="${x + barW/2}" y="${cumY - 4}" class="bar-value" text-anchor="middle">${fmtNum(total)}</text>`;
+    }
+
+    if (i % 2 === 0 || data.length <= 7) {
+      svg += `<text x="${x + barW/2}" y="${h - 8}" class="bar-label" text-anchor="middle">${(d.date||'').slice(5)}</text>`;
+    }
+  });
+
+  const legendY = 10;
+  let lx = pad;
+  labels.forEach((label, i) => {
+    svg += `<rect x="${lx}" y="${legendY}" width="8" height="8" rx="1" fill="${colors[i]}" opacity="0.85"/>`;
+    svg += `<text x="${lx+12}" y="${legendY+8}" class="bar-label">${label}</text>`;
+    lx += label.length * 6 + 24;
+  });
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+}
+
 // --- Sessions Table ---
 function renderSessions(sessions) {
   const tbody = document.getElementById('sessions-table');
   if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px">No sessions today</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px">No sessions today</td></tr>';
     return;
   }
 
@@ -1006,9 +1033,29 @@ function renderSessions(sessions) {
       <td class="mono">${fmtNum(s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_create_tokens)}</td>
       <td class="mono">${fmtCost(s.estimated_cost_usd || 0)}</td>
       <td>${s.message_count || 0}</td>
+      <td>${renderWasteFlags(s)}</td>
       <td style="color:var(--text-dim)">${fmtTimeAgo(s.last_activity)}</td>
     </tr>
   `).join('');
+}
+
+function renderWasteFlags(s) {
+  const flags = s.waste_flags || [];
+  if (!flags.length) {
+    const eff = s.cache_efficiency != null ? (s.cache_efficiency * 100).toFixed(1) : '0.0';
+    return `<span style="color:var(--green);font-size:12px">${eff}% cache reuse</span>`;
+  }
+  const labels = {
+    low_cache_efficiency: `${(s.cache_efficiency * 100).toFixed(0)}% cache reuse`,
+    no_file_edits: 'no file edits',
+  };
+  return flags.map(f => {
+    const cls = f === 'no_file_edits' ? 'waste-badge warn' : 'waste-badge';
+    const tip = f === 'low_cache_efficiency'
+      ? 'Most input context was cache-created rather than reused — high cache write cost'
+      : 'Many tokens spent but no files were written or edited';
+    return `<span class="${cls}" title="${tip}">${labels[f] || f}</span>`;
+  }).join(' ');
 }
 
 function shortProject(p) {
@@ -1039,6 +1086,9 @@ function openSessionDetail(sessionId) {
       <div class="meta-item"><span class="meta-label">Tokens:</span> <span class="meta-value">${fmtNum(session.input_tokens + session.output_tokens + session.cache_read_tokens + session.cache_create_tokens)}</span></div>
       <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">${fmtCost(session.estimated_cost_usd || 0)}</span></div>
       <div class="meta-item"><span class="meta-label">Messages:</span> <span class="meta-value">${session.message_count}</span></div>
+      <div class="meta-item"><span class="meta-label">Cache reuse:</span> <span class="meta-value">${session.cache_efficiency != null ? (session.cache_efficiency * 100).toFixed(1) + '%' : '—'}</span></div>
+      <div class="meta-item"><span class="meta-label">File edits:</span> <span class="meta-value">${session.has_file_edits ? 'Yes' : 'No'}</span></div>
+      ${(session.waste_flags || []).length ? `<div class="meta-item"><span class="meta-label">Waste:</span> <span class="meta-value">${renderWasteFlags(session)}</span></div>` : ''}
     `;
   }
 
@@ -1733,7 +1783,7 @@ function fetchAll() {
 
   fetch('/api/history?days=14').then(r => r.json()).then(data => {
     historyData = data;
-    renderStackedBarChart('chart-tokens', data);
+    renderTokensChart();
     renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
   }).catch(() => {});
 
@@ -1825,7 +1875,7 @@ setInterval(() => {
   fetch('/api/history?days=14').then(r => r.json()).then(data => {
     if (JSON.stringify(data) !== JSON.stringify(historyData)) {
       historyData = data;
-      renderStackedBarChart('chart-tokens', data);
+      renderTokensChart();
       renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
     }
   }).catch(() => {});

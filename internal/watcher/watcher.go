@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -21,7 +22,7 @@ type Watcher struct {
 func New(claudeDir string) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating fsnotify watcher: %w", err)
 	}
 
 	w := &Watcher{

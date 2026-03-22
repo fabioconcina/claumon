@@ -150,7 +150,7 @@ func loadEmbedded() map[string]ModelPricing {
 func loadCacheFile() (map[string]ModelPricing, error) {
 	data, err := os.ReadFile(cachePath())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading pricing cache: %w", err)
 	}
 	var pf pricingFile
 	if err := json.Unmarshal(data, &pf); err != nil {

@@ -72,8 +72,8 @@ func BuildGraph(files []*MemoryFile) *GraphData {
 			continue
 		}
 		dir := filepath.Dir(f.Path)
-		for _, link := range extractMarkdownLinks(f.Content) {
-			target := filepath.Join(dir, link.Href)
+		for _, href := range extractMarkdownLinks(f.Content) {
+			target := filepath.Join(dir, href)
 			if knownPaths[target] {
 				data.Edges = append(data.Edges, GraphEdge{
 					Source: f.Path,

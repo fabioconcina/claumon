@@ -38,6 +38,9 @@ type SessionSummary struct {
 	EstimatedCostUSD  float64   `json:"estimated_cost_usd"`
 	MessageCount      int       `json:"message_count"`
 	CWD               string    `json:"cwd"`
+	HasFileEdits    bool      `json:"has_file_edits"`
+	CacheEfficiency float64   `json:"cache_efficiency"`
+	WasteFlags      []string  `json:"waste_flags"`
 }
 
 // SessionMessage represents a single parsed message from a session for the detail view.
@@ -72,6 +75,13 @@ type jsonlLine struct {
 	Title string `json:"title,omitempty"`
 }
 
+// newSessionScanner creates a scanner for reading JSONL session files with a 2MB line limit.
+func newSessionScanner(f *os.File) *bufio.Scanner {
+	s := bufio.NewScanner(f)
+	s.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+	return s
+}
+
 func ParseSessionFile(path string) (*SessionSummary, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -83,8 +93,7 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 		ID: strings.TrimSuffix(filepath.Base(path), ".jsonl"),
 	}
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+	scanner := newSessionScanner(f)
 
 	var firstUserMsg string
 
@@ -134,6 +143,9 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 					summary.CacheReadTokens += u.CacheReadInputTokens
 					summary.CacheCreateTokens += u.CacheCreationInputTokens
 				}
+				if !summary.HasFileEdits && hasFileEditTool(entry.Message.Content) {
+					summary.HasFileEdits = true
+				}
 			}
 		case "user":
 			summary.MessageCount++
@@ -149,6 +161,8 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 	}
 
 	summary.EstimatedCostUSD = estimateCost(summary)
+	summary.CacheEfficiency = cacheEfficiency(summary)
+	summary.WasteFlags = detectWaste(summary)
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scanning session file: %w", err)
 	}
@@ -208,7 +222,7 @@ func DiscoverSessions(claudeDir string) ([]*SessionSummary, error) {
 	projectsDir := filepath.Join(claudeDir, "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading projects directory: %w", err)
 	}
 
 	var sessions []*SessionSummary
@@ -263,8 +277,7 @@ func ParseSessionDetail(path string) ([]SessionMessage, error) {
 	defer f.Close()
 
 	var messages []SessionMessage
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+	scanner := newSessionScanner(f)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -367,53 +380,54 @@ func AggregateSessions(sessions []*SessionSummary) SessionAggregate {
 	return agg
 }
 
-func extractText(content json.RawMessage) string {
+// contentBlock represents a single block in a Claude message content array.
+type contentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+// parseContentBlocks parses message content as either a string or array of blocks.
+// Returns nil if content is empty or unparseable.
+func parseContentBlocks(content json.RawMessage) []contentBlock {
 	if len(content) == 0 {
-		return ""
+		return nil
 	}
 
 	// Try as string first
 	var s string
 	if err := json.Unmarshal(content, &s); err == nil {
-		return s
+		return []contentBlock{{Type: "text", Text: s}}
 	}
 
 	// Try as array of content blocks
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
+	var blocks []contentBlock
 	if err := json.Unmarshal(content, &blocks); err == nil {
-		var parts []string
-		for _, b := range blocks {
-			if b.Type == "text" && b.Text != "" {
-				parts = append(parts, b.Text)
-			}
-		}
-		return strings.Join(parts, "\n")
+		return blocks
 	}
+	return nil
+}
 
-	return ""
+func extractText(content json.RawMessage) string {
+	blocks := parseContentBlocks(content)
+	var parts []string
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			parts = append(parts, b.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func extractToolUse(content json.RawMessage) string {
-	if len(content) == 0 {
-		return ""
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(content, &blocks); err == nil {
-		var tools []string
-		for _, b := range blocks {
-			if b.Type == "tool_use" && b.Name != "" {
-				tools = append(tools, b.Name)
-			}
+	blocks := parseContentBlocks(content)
+	var tools []string
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.Name != "" {
+			tools = append(tools, b.Name)
 		}
-		return strings.Join(tools, ", ")
 	}
-	return ""
+	return strings.Join(tools, ", ")
 }
 
 var (
@@ -427,6 +441,60 @@ func stripXMLTags(s string) string {
 	s = fullTagLineRe.ReplaceAllString(s, "")
 	s = xmlTagRe.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
+}
+
+// fileEditTools are tool names that indicate the session produced file changes.
+var fileEditTools = map[string]bool{
+	"Write": true, "Edit": true, "NotebookEdit": true,
+	"write": true, "edit": true,
+}
+
+// hasFileEditTool checks if a message's content blocks contain a file-editing tool_use.
+func hasFileEditTool(content json.RawMessage) bool {
+	for _, b := range parseContentBlocks(content) {
+		if b.Type == "tool_use" && fileEditTools[b.Name] {
+			return true
+		}
+	}
+	return false
+}
+
+// cacheEfficiency returns the fraction of input context served from existing cache.
+// Computed as cache_read / (input + cache_read + cache_create).
+// Returns 0 if there is no input context.
+func cacheEfficiency(s *SessionSummary) float64 {
+	total := s.InputTokens + s.CacheReadTokens + s.CacheCreateTokens
+	if total == 0 {
+		return 0
+	}
+	ratio := float64(s.CacheReadTokens) / float64(total)
+	return math.Round(ratio*1000) / 1000
+}
+
+const (
+	wasteMinTokens      = 50_000
+	wasteMinMessages    = 10
+	wasteLowEfficiency  = 0.5
+)
+
+// detectWaste flags sessions with low cache efficiency or high token
+// usage without any file edits.
+func detectWaste(s *SessionSummary) []string {
+	totalTokens := s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheCreateTokens
+	var flags []string
+
+	if s.CacheEfficiency <= wasteLowEfficiency && totalTokens >= wasteMinTokens {
+		flags = append(flags, "low_cache_efficiency")
+	}
+
+	if !s.HasFileEdits && totalTokens >= wasteMinTokens && s.MessageCount >= wasteMinMessages {
+		flags = append(flags, "no_file_edits")
+	}
+
+	if flags == nil {
+		flags = []string{}
+	}
+	return flags
 }
 
 func truncate(s string, maxLen int) string {

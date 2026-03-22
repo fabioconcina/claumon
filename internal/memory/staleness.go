@@ -8,10 +8,6 @@ import (
 	"time"
 )
 
-type markdownLink struct {
-	Href string
-}
-
 type StalenessAlert struct {
 	Type       string `json:"type"`                  // "broken-link", "orphaned-file", "index-mismatch"
 	Severity   string `json:"severity"`              // "error", "warning"
@@ -39,11 +35,11 @@ func pathIndex(files []*MemoryFile) map[string]bool {
 var mdLinkRegex = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+\.md)\)`)
 
 // extractMarkdownLinks parses markdown link references to .md files from content.
-func extractMarkdownLinks(content string) []markdownLink {
+func extractMarkdownLinks(content string) []string {
 	matches := mdLinkRegex.FindAllStringSubmatch(content, -1)
-	var links []markdownLink
+	var links []string
 	for _, m := range matches {
-		links = append(links, markdownLink{Href: m[2]})
+		links = append(links, m[2])
 	}
 	return links
 }
@@ -72,8 +68,8 @@ func checkBrokenLinks(files []*MemoryFile) []StalenessAlert {
 			continue
 		}
 		dir := filepath.Dir(f.Path)
-		for _, link := range extractMarkdownLinks(f.Content) {
-			target := filepath.Join(dir, link.Href)
+		for _, href := range extractMarkdownLinks(f.Content) {
+			target := filepath.Join(dir, href)
 			if knownPaths[target] {
 				continue
 			}
@@ -87,7 +83,7 @@ func checkBrokenLinks(files []*MemoryFile) []StalenessAlert {
 				Project:    f.Project,
 				FilePath:   f.Path,
 				TargetPath: target,
-				Message:    fmt.Sprintf("MEMORY.md links to \"%s\" which does not exist", link.Href),
+				Message:    fmt.Sprintf("MEMORY.md links to \"%s\" which does not exist", href),
 			})
 		}
 	}
@@ -103,8 +99,8 @@ func checkOrphanedFiles(files []*MemoryFile) []StalenessAlert {
 			continue
 		}
 		dir := filepath.Dir(f.Path)
-		for _, link := range extractMarkdownLinks(f.Content) {
-			referenced[filepath.Join(dir, link.Href)] = true
+		for _, href := range extractMarkdownLinks(f.Content) {
+			referenced[filepath.Join(dir, href)] = true
 		}
 	}
 
