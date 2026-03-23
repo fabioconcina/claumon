@@ -40,8 +40,12 @@ public class CredManager {
 [CredManager]::Read("Claude Code-credentials")
 `
 
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", script).Output()
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	out, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			return nil, fmt.Errorf("Windows Credential Manager lookup failed: %w\nstderr: %s", err, exitErr.Stderr)
+		}
 		return nil, fmt.Errorf("Windows Credential Manager lookup failed: %w", err)
 	}
 

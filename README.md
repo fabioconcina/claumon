@@ -44,6 +44,8 @@ chmod +x claumon
 
 # Windows (x86_64)
 # Download claumon-windows-amd64.exe from the releases page
+# If blocked by Defender: right-click the .exe -> Properties -> Unblock
+# Or run: Unblock-File claumon-windows-amd64.exe
 ```
 
 Or build from source:
