@@ -1827,7 +1827,6 @@ function renderGraphView() {
     <div class="stat"><span class="stat-value">${filteredNodes.length}</span><span class="stat-label">nodes</span></div>
     <div class="stat"><span class="stat-value">${filteredEdges.length}</span><span class="stat-label">edges</span></div>
     <div class="stat"><span class="stat-value">${new Set(filteredNodes.map(n => n.project)).size}</span><span class="stat-label">projects</span></div>
-    ${edgesByType['cross-project'] ? '<div class="stat"><span class="stat-value">' + edgesByType['cross-project'] + '</span><span class="stat-label">cross-project links</span></div>' : ''}
   `;
 
   if (!filteredNodes.length) {
@@ -1882,11 +1881,7 @@ function renderGraphView() {
   filteredEdges.forEach(e => {
     const s = nodeMap[e.source], t = nodeMap[e.target];
     if (!s || !t) return;
-    if (e.type === 'cross-project') {
-      svg += `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="4,4" opacity="0.15"/>`;
-    } else {
-      svg += `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="var(--text-dim)" stroke-width="1.5" opacity="0.4"/>`;
-    }
+    svg += `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="var(--text-dim)" stroke-width="1.5" opacity="0.4"/>`;
   });
 
   // Nodes
@@ -1960,8 +1955,6 @@ function renderGraphLegend(legendEl) {
   }).join('') + `
     <div class="graph-legend-item" style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
       <span style="display:inline-block;width:20px;height:2px;background:var(--text-dim);vertical-align:middle"></span> index link</div>
-    <div class="graph-legend-item">
-      <span style="display:inline-block;width:20px;height:0;border-top:2px dashed var(--accent);vertical-align:middle"></span> cross-project</div>
   `;
   legendEl.querySelectorAll('[data-legend-key]').forEach(el => {
     el.addEventListener('click', () => {

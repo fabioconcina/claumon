@@ -17,7 +17,7 @@ type GraphNode struct {
 type GraphEdge struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
-	Type   string `json:"type"` // "index-link" or "cross-project"
+	Type   string `json:"type"` // "index-link"
 }
 
 type GraphGroup struct {
@@ -84,9 +84,6 @@ func BuildGraph(files []*MemoryFile) *GraphData {
 		}
 	}
 
-	// Cross-project edges via shared entities
-	data.Edges = append(data.Edges, findCrossProjectEdges(files)...)
-
 	// Build groups
 	groupCounts := make(map[string]int)
 	for _, f := range files {
@@ -107,59 +104,6 @@ func BuildGraph(files []*MemoryFile) *GraphData {
 	}
 
 	return data
-}
-
-// findCrossProjectEdges detects shared entities (SSH refs, binary paths) across projects.
-func findCrossProjectEdges(files []*MemoryFile) []GraphEdge {
-	// Map entity -> list of files containing it
-	entityFiles := make(map[string][]*MemoryFile)
-
-	for _, f := range files {
-		if f.Project == "" {
-			continue // skip global files
-		}
-		entities := extractEntities(f.Content)
-		seen := make(map[string]bool)
-		for _, e := range entities {
-			if seen[e] {
-				continue
-			}
-			seen[e] = true
-			entityFiles[e] = append(entityFiles[e], f)
-		}
-	}
-
-	// Create edges between files from different projects sharing an entity
-	type edgeKey struct{ source, target string }
-	dedupe := make(map[edgeKey]bool)
-	var edges []GraphEdge
-
-	for _, group := range entityFiles {
-		if len(group) < 2 {
-			continue
-		}
-		for i := 0; i < len(group); i++ {
-			for j := i + 1; j < len(group); j++ {
-				if group[i].Project == group[j].Project {
-					continue
-				}
-				key := edgeKey{group[i].Path, group[j].Path}
-				if key.source > key.target {
-					key.source, key.target = key.target, key.source
-				}
-				if dedupe[key] {
-					continue
-				}
-				dedupe[key] = true
-				edges = append(edges, GraphEdge{
-					Source: key.source,
-					Target: key.target,
-					Type:   "cross-project",
-				})
-			}
-		}
-	}
-	return edges
 }
 
 func extractEntities(content string) []string {

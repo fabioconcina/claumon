@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/fabioconcina/claumon/internal/store"
 )
@@ -93,7 +94,7 @@ func TestHandleHistory(t *testing.T) {
 	srv, st := setupTestServer(t)
 
 	st.UpsertDailyAggregate(store.DailyAggregate{
-		Date:         "2026-03-20",
+		Date:         time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02"),
 		InputTokens:  1000,
 		OutputTokens: 500,
 		CostUSD:      0.05,

@@ -50,25 +50,6 @@ func TestBuildGraphIndexLinks(t *testing.T) {
 	}
 }
 
-func TestBuildGraphCrossProjectEdges(t *testing.T) {
-	files := []*MemoryFile{
-		{Path: "/a/mem/ssh.md", Project: "/a", Category: "memory-file", Content: "Connect to admin@192.168.1.1"},
-		{Path: "/b/mem/ssh.md", Project: "/b", Category: "memory-file", Content: "Also uses admin@192.168.1.1"},
-	}
-
-	data := BuildGraph(files)
-
-	var foundCross bool
-	for _, e := range data.Edges {
-		if e.Type == "cross-project" {
-			foundCross = true
-		}
-	}
-	if !foundCross {
-		t.Error("expected a cross-project edge for shared SSH ref")
-	}
-}
-
 func TestBuildGraphGroups(t *testing.T) {
 	files := []*MemoryFile{
 		{Path: "/a/note.md", Project: "/a", Category: "memory-file"},
