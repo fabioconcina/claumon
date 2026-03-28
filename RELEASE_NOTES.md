@@ -1,11 +1,11 @@
+## New
+
+- **Auto-memory health scores** — per-file grading (freshness, structure, specificity, connectedness) with letter grades and improvement suggestions
+
+## Changed
+
+- **Removed cross-project edges from memory graph** — the entity-based linking (SSH hosts, binary paths) was noise, not signal
+
 ## Fixed
 
-- **Windows credential lookup** — added `-NonInteractive` and `-ExecutionPolicy Bypass` flags to PowerShell credential reader, with better error messages surfacing stderr
-- **Windows setup instructions** — added Defender unblock steps to README and landing page
-- **Gitignore** — exclude `claumon.exe` binary
-
-## Install
-
-Single binary, zero config. Download, run, open `http://localhost:3131`.
-
-Reads credentials from `~/.claude/.credentials.json` or your OS credential store. If missing, session tracking still works — only API usage gauges are unavailable.
+- **Flaky `TestHandleHistory`** — use relative date instead of hardcoded value that drifts out of the query window
