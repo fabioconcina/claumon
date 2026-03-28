@@ -494,6 +494,120 @@ tr.clickable { cursor: pointer; }
   color: var(--green);
 }
 
+/* Health scores */
+.health-banner {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+}
+.health-banner h3 {
+  font-size: 12px; color: var(--text-dim); margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.health-summary {
+  display: flex; gap: 16px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;
+}
+.health-avg {
+  display: flex; align-items: center; gap: 8px;
+}
+.health-avg-score {
+  font-size: 28px; font-weight: 700; line-height: 1;
+}
+.health-avg-label { font-size: 12px; color: var(--text-dim); }
+.health-grades {
+  display: flex; gap: 6px;
+}
+.health-grade-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 4px;
+  font-size: 11px; font-weight: 700;
+}
+.health-grade-pill .grade-letter { font-size: 12px; }
+.health-grade-pill .grade-count { opacity: 0.8; }
+.grade-A { background: var(--green); color: var(--bg); }
+.grade-B { background: var(--teal); color: var(--bg); }
+.grade-C { background: var(--yellow); color: var(--bg); }
+.grade-D { background: var(--orange); color: var(--bg); }
+.grade-F { background: var(--red); color: var(--bg); }
+.health-toggle {
+  margin-left: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.health-toggle:hover { border-color: var(--accent); }
+.health-files { display: none; }
+.health-files.open { display: block; }
+.health-file-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.health-file-row:last-child { border-bottom: none; }
+.health-file-score {
+  flex-shrink: 0; width: 40px; text-align: center;
+  font-weight: 700; font-size: 13px;
+}
+.health-file-grade {
+  flex-shrink: 0; width: 22px; height: 22px;
+  border-radius: 4px; text-align: center; line-height: 22px;
+  font-size: 11px; font-weight: 700;
+}
+.health-file-info { flex: 1; min-width: 0; }
+.health-file-name {
+  font-size: 13px; font-weight: 600; color: var(--text-bright);
+}
+.health-file-path {
+  font-family: monospace; font-size: 11px; color: var(--text-dim);
+}
+.health-file-bars {
+  display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;
+}
+.health-bar-item {
+  display: flex; align-items: center; gap: 6px;
+}
+.health-bar-label {
+  font-size: 11px; color: var(--text-dim); min-width: 80px; text-align: right;
+}
+.health-bar-track {
+  width: 100px; height: 8px; background: var(--border); border-radius: 4px;
+  overflow: hidden;
+}
+.health-bar-fill {
+  height: 100%; border-radius: 4px;
+}
+.health-bar-val {
+  font-size: 11px; color: var(--text); min-width: 24px; font-weight: 600;
+}
+.health-suggestions {
+  margin-top: 4px;
+}
+.health-suggestion {
+  font-size: 11px; color: var(--yellow);
+  padding: 1px 0;
+}
+.health-suggestion::before { content: "→ "; opacity: 0.6; }
+.health-fix-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent);
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 8px;
+  font-weight: 600;
+  transition: border-color 0.15s;
+}
+.health-fix-btn:hover { border-color: var(--accent); }
+.health-fix-btn.copied { border-color: var(--green); color: var(--green); }
+
 .tab-badge {
   display: inline-block;
   background: var(--red);
@@ -709,6 +823,7 @@ tr.clickable { cursor: pointer; }
 
   <!-- Memories Tab -->
   <div class="tab-content" id="tab-memories">
+    <div id="health-report" class="health-banner" style="display:none"></div>
     <div id="staleness-alerts" class="staleness-banner" style="display:none"></div>
     <div id="consolidation-alerts" class="consolidation-banner" style="display:none"></div>
     <div id="memories-stats" class="memories-stats"></div>
@@ -1343,9 +1458,20 @@ function renderMemorySection(title, files, startOpen) {
   `;
 }
 
+function getHealthForPath(path) {
+  if (!healthData || !healthData.scores) return null;
+  return healthData.scores.find(s => s.path === path) || null;
+}
+
 function renderMemoryFileCard(f) {
   const stale = stalenessInfo(f.mod_time);
   const hasFM = f.fm_name || f.fm_type;
+  const health = getHealthForPath(f.path);
+
+  let healthHtml = '';
+  if (health) {
+    healthHtml = `<span class="health-file-grade grade-${health.grade}" style="display:inline-block;font-size:10px;width:18px;height:18px;line-height:18px;margin-right:4px">${health.grade}</span><span style="font-weight:700;font-size:12px;color:${healthBarColor(health.overall)};margin-right:8px">${health.overall}</span>`;
+  }
 
   let badgesHtml = '';
   if (hasFM) {
@@ -1366,7 +1492,7 @@ function renderMemoryFileCard(f) {
   return `
     <div class="memory-file" data-path="${escHtml(f.path)}">
       <div class="memory-file-header">
-        <span class="path">${catLabels[f.category] || f.category}: ${fileName(f.path)}
+        <span class="path">${healthHtml}${catLabels[f.category] || f.category}: ${fileName(f.path)}
           <a class="vscode-link" href="${vscodeUrl(f.path)}" title="Open in VS Code">edit</a>
         </span>
         <span class="meta">
@@ -1497,6 +1623,142 @@ function copyPrompt(btn, id) {
       btn.classList.remove('copied');
     }, 2000);
   });
+}
+
+// --- Health Scores ---
+let healthData = null;
+
+function fetchHealth() {
+  fetch('/api/memories/health').then(r => r.json()).then(data => {
+    healthData = data;
+    renderHealth(data);
+    // Re-render memory cards so they pick up the health scores
+    if (memoriesData) applyMemoriesView();
+  }).catch(() => {});
+}
+
+function healthBarColor(score) {
+  if (score >= 85) return 'var(--green)';
+  if (score >= 70) return 'var(--teal)';
+  if (score >= 50) return 'var(--yellow)';
+  if (score >= 30) return 'var(--orange)';
+  return 'var(--red)';
+}
+
+function renderHealth(data) {
+  const container = document.getElementById('health-report');
+  if (!data.scores || !data.scores.length) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+
+  const grades = data.grade_count || {};
+  const gradeOrder = ['A', 'B', 'C', 'D', 'F'];
+  const gradePills = gradeOrder
+    .filter(g => grades[g] > 0)
+    .map(g => `<span class="health-grade-pill grade-${g}"><span class="grade-letter">${g}</span><span class="grade-count">${grades[g]}</span></span>`)
+    .join('');
+
+  const avgColor = healthBarColor(data.average_score);
+  const needsWork = data.scores.filter(s => s.overall < 70);
+
+  container.innerHTML = `
+    <h3>Memory Health</h3>
+    <div class="health-summary">
+      <div class="health-avg">
+        <span class="health-avg-score" style="color:${avgColor}">${data.average_score}</span>
+        <span class="health-avg-label">avg score<br>${data.scores.length} files</span>
+      </div>
+      <div class="health-grades">${gradePills}</div>
+      ${data.scores.length > 0 ? `<button class="health-toggle" onclick="toggleHealthFiles()">
+        ${needsWork.length > 0 ? needsWork.length + ' need work' : 'Details'}
+      </button>` : ''}
+    </div>
+    <div class="health-files" id="health-files-list">
+      ${data.scores.map(s => renderHealthRow(s)).join('')}
+    </div>
+  `;
+}
+
+function renderHealthRow(s) {
+  const dims = [
+    { label: 'Freshness', val: s.freshness },
+    { label: 'Structure', val: s.structure },
+    { label: 'Specificity', val: s.specificity },
+    { label: 'Connected', val: s.connectedness },
+  ];
+
+  const bars = dims.map(d => `
+    <div class="health-bar-item">
+      <span class="health-bar-label">${d.label}</span>
+      <div class="health-bar-track">
+        <div class="health-bar-fill" style="width:${d.val}%;background:${healthBarColor(d.val)}"></div>
+      </div>
+      <span class="health-bar-val" style="color:${healthBarColor(d.val)}">${d.val}</span>
+    </div>
+  `).join('');
+
+  const suggestions = (s.suggestions || []).map(sg =>
+    `<div class="health-suggestion">${escHtml(sg)}</div>`
+  ).join('');
+
+  const label = s.fm_name || fileName(s.path);
+  const proj = s.project ? s.project.split('/').pop() : 'global';
+  const hasPrompt = s.prompt && s.prompt.length > 0;
+  const promptId = 'health-prompt-' + s.path.replace(/[^a-zA-Z0-9]/g, '_');
+
+  return `
+    <div class="health-file-row">
+      <span class="health-file-grade grade-${s.grade}">${s.grade}</span>
+      <span class="health-file-score" style="color:${healthBarColor(s.overall)}">${s.overall}</span>
+      <div class="health-file-info">
+        <div class="health-file-name">
+          <a href="#" onclick="scrollToMemory('${escHtml(s.path)}');return false" style="color:var(--accent)">${escHtml(label)}</a>
+          <span style="color:var(--text-dim);font-weight:400;font-size:11px;margin-left:6px">${escHtml(proj)}</span>
+          ${hasPrompt ? `<button class="health-fix-btn" onclick="copyHealthPrompt(this, '${promptId}')" title="Copy a prompt to fix these issues in Claude Code">Fix</button>` : ''}
+        </div>
+        <div class="health-file-bars">${bars}</div>
+        ${suggestions ? '<div class="health-suggestions">' + suggestions + '</div>' : ''}
+        ${hasPrompt ? `<textarea id="${promptId}" style="display:none">${escHtml(s.prompt)}</textarea>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function copyHealthPrompt(btn, id) {
+  const textarea = document.getElementById(id);
+  navigator.clipboard.writeText(textarea.value).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Fix';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+function scrollToMemory(path) {
+  // Ensure memory section is expanded
+  const card = document.querySelector(`.memory-file[data-path="${path}"]`);
+  if (!card) return;
+  // Open the parent section if collapsed
+  const section = card.closest('.memory-section');
+  if (section && !section.classList.contains('open')) {
+    section.classList.add('open');
+  }
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.add('highlight');
+  setTimeout(() => card.classList.remove('highlight'), 3000);
+}
+
+function toggleHealthFiles() {
+  const el = document.getElementById('health-files-list');
+  el.classList.toggle('open');
+  const btn = el.previousElementSibling.querySelector('.health-toggle');
+  if (btn) {
+    btn.textContent = el.classList.contains('open') ? 'Hide' : (healthData && healthData.scores ? healthData.scores.filter(s => s.overall < 70).length + ' need work' : 'Details');
+  }
 }
 
 // --- Memory Graph ---
@@ -1796,6 +2058,7 @@ function fetchAll() {
 
   fetchStaleness();
   fetchConsolidation();
+  fetchHealth();
   fetchGraph();
 }
 
@@ -1847,6 +2110,7 @@ function connectSSE() {
     });
     fetchStaleness();
     fetchConsolidation();
+    fetchHealth();
     fetchGraph();
   });
 

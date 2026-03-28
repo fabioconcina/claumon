@@ -29,6 +29,7 @@ type memoryCache struct {
 	staleness     *memory.StalenessReport
 	graph         *memory.GraphData
 	consolidation *memory.ConsolidationReport
+	health        *memory.HealthReport
 }
 
 func NewHandlers(claudeDir string, st *store.Store) *Handlers {
@@ -51,6 +52,7 @@ func (h *Handlers) RefreshMemories() {
 		staleness:     memory.CheckStaleness(files),
 		graph:         memory.BuildGraph(files),
 		consolidation: memory.FindConsolidation(files),
+		health:        memory.ScoreHealth(files),
 	}
 	h.memMu.Lock()
 	h.memories = mc
@@ -163,6 +165,19 @@ func (h *Handlers) HandleMemoriesConsolidation(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, mc.consolidation)
+}
+
+func (h *Handlers) HandleMemoriesHealth(w http.ResponseWriter, r *http.Request) {
+	mc := h.getMemories()
+	if mc.health == nil {
+		writeJSON(w, &memory.HealthReport{
+			Scores:     []memory.HealthScore{},
+			GradeCount: map[string]int{},
+			CheckedAt:  0,
+		})
+		return
+	}
+	writeJSON(w, mc.health)
 }
 
 func (h *Handlers) HandleMemoriesSearch(w http.ResponseWriter, r *http.Request) {
