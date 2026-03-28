@@ -16,7 +16,7 @@ There are plenty of Claude Code dashboards out there. This one isn't trying to b
 
 Single binary, no dependencies, no build step, no config required. Run it and open a browser tab.
 
-It gives you rate limit gauges, per-session token breakdowns, cost estimates, historical trends, conversation history, and a memory browser with relationship graph and staleness alerts — all updating in real time via SSE. Daily aggregates are stored in SQLite so you can track usage over weeks, not just the current session.
+It gives you rate limit gauges, per-session token breakdowns, cost estimates, historical trends, conversation history, and a memory browser with relationship graph, health scores, and staleness alerts — all updating in real time via SSE. Daily aggregates are stored in SQLite so you can track usage over weeks, not just the current session.
 
 <p align="center">
   <img src="assets/screenshot.png" alt="claumon dashboard" width="700">
@@ -92,10 +92,14 @@ Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
 - **Staleness alerts** — broken MEMORY.md links, orphaned files, index mismatches
 - **VS Code integration** — click to open files in your editor via `vscode://` links
 
+### Memory health scores
+
+- **Per-file grading** — each memory file gets a letter grade (A–F) based on freshness, structure, specificity, and connectedness
+- **Improvement suggestions** — actionable tips for low-scoring files (add frontmatter, link from MEMORY.md, etc.)
+
 ### Memory graph
 
 - **Interactive visualization** — nodes are memory files, edges show relationships
-- **Cross-project connections** — detects shared entities (servers, paths) across projects
 - **Project filters** — focus on specific projects
 - **Clickable legend** — toggle node types on/off
 - **Click to navigate** — click a node to jump to its file in the memory browser
