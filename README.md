@@ -80,8 +80,16 @@ Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
 ### Sessions
 
 - **Active sessions table** — project, model, tokens, cost, messages, last activity
+- **Today / Recent toggle** — switch between today's sessions and the 50 most recent across all time
+- **Running process detection** — shows which sessions are actively running with green "active" badge
 - **Session detail view** — full message timeline with per-message token counts and tool usage
 - **Automatic discovery** — watches `~/.claude/projects/` for new and updated sessions
+
+### Running processes
+
+- **Live process table** — shows all running Claude Code processes with PID, chat title, project, type, and uptime
+- **Stop button** — send SIGINT to gracefully stop any running process (conversation is preserved on disk)
+- **Auto-refresh** — updates via SSE and periodic polling
 
 ### Memory browser
 
@@ -133,7 +141,8 @@ Optional. Create `~/.claumon/config.json`:
   "poll_interval_seconds": 120,
   "credentials_path": "~/.claude/.credentials.json",
   "claude_dir": "~/.claude",
-  "db_path": "~/.claumon/usage.db"
+  "db_path": "~/.claumon/usage.db",
+  "stuck_threshold_minutes": 10
 }
 ```
 

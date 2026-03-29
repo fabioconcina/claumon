@@ -1,11 +1,10 @@
 ## New
 
-- **Auto-memory health scores** — per-file grading (freshness, structure, specificity, connectedness) with letter grades and improvement suggestions
+- **Running processes section** — dedicated table showing all live Claude Code processes with PID, chat title, project, entrypoint, uptime, and a Stop button to gracefully terminate (SIGINT)
+- **Session process detection** — sessions table now shows green "active" badge for running sessions
+- **Today / Recent toggle** — switch between today's sessions and the 50 most recent sessions across all time
 
 ## Changed
 
-- **Removed cross-project edges from memory graph** — the entity-based linking (SSH hosts, binary paths) was noise, not signal
-
-## Fixed
-
-- **Flaky `TestHandleHistory`** — use relative date instead of hardcoded value that drifts out of the query window
+- **Optimized all-sessions loading** — uses file modification time to sort and cap results, avoiding parsing hundreds of JSONL files
+- Process killing is centralized in the Running Processes section (not in session detail)
