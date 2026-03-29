@@ -164,6 +164,27 @@ claumon combines three data sources:
 
 Everything is embedded in a single binary via `//go:embed` — no external files, no Node.js, no build step for the frontend.
 
+### Architecture
+
+```mermaid
+graph TD
+    API["Claude OAuth API"] --> ENGINE
+    JSONL["Session JSONL Files"] --> ENGINE
+    MEM["Memory Files"] --> ENGINE
+    PRICE["Pricing Data"] --> ENGINE
+
+    ENGINE["Pollers · Watchers · Parsers"] --> DB["SQLite"]
+    ENGINE --> CACHE["In-Memory Cache"]
+    ENGINE --> SSE["SSE Broker"]
+
+    DB --> HTTP["HTTP Server"]
+    CACHE --> HTTP
+    JSONL -->|"parsed fresh"| HTTP
+    SSE --> HTTP
+
+    HTTP --> SPA["Embedded SPA"]
+```
+
 ## License
 
 MIT
