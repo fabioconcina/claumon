@@ -36,7 +36,8 @@ type Config struct {
 	ClaudeDir        string                             `json:"claude_dir"`
 	DBPath           string                             `json:"db_path"`
 	RetentionDays    int                                `json:"retention_days"`
-	PricingOverrides map[string]pricing.ModelPricing     `json:"pricing_overrides,omitempty"`
+	PricingOverrides    map[string]pricing.ModelPricing `json:"pricing_overrides,omitempty"`
+	StuckThresholdMins int                            `json:"stuck_threshold_minutes"`
 }
 
 func defaultConfig() Config {
@@ -81,6 +82,9 @@ func loadConfig() Config {
 	if cfg.RetentionDays == 0 {
 		cfg.RetentionDays = 90
 	}
+	if cfg.StuckThresholdMins == 0 {
+		cfg.StuckThresholdMins = 10
+	}
 	return cfg
 }
 
@@ -123,6 +127,7 @@ func main() {
 	srv.Handlers.Version = version
 	srv.Handlers.SubscriptionType = creds.SubscriptionType
 	srv.Handlers.RateLimitTier = creds.RateLimitTier
+	srv.Handlers.StuckThreshold = time.Duration(cfg.StuckThresholdMins) * time.Minute
 
 	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -142,10 +147,12 @@ func main() {
 	if err != nil {
 		log.Printf("[watcher] Failed to start: %v", err)
 	} else {
+		stuckThreshold := time.Duration(cfg.StuckThresholdMins) * time.Minute
 		w.OnSessionChange(func(path string) {
 			log.Printf("[watcher] Session changed: %s", filepath.Base(path))
 			sessions, err := parser.DiscoverTodaySessions(cfg.ClaudeDir)
 			if err == nil {
+				parser.EnrichSessionsWithProcessStatus(sessions, cfg.ClaudeDir, stuckThreshold)
 				data, _ := json.Marshal(sessions)
 				srv.Broker.Send(server.SSEEvent{Event: "sessions", Data: string(data)})
 			}

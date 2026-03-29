@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,10 @@ type SessionSummary struct {
 	HasFileEdits    bool      `json:"has_file_edits"`
 	CacheEfficiency float64   `json:"cache_efficiency"`
 	WasteFlags      []string  `json:"waste_flags"`
+	IsRunning       bool      `json:"is_running"`
+	IsStuck         bool      `json:"is_stuck"`
+	PID             int       `json:"pid,omitempty"`
+	IdleMinutes     float64   `json:"idle_minutes,omitempty"`
 }
 
 // SessionMessage represents a single parsed message from a session for the detail view.
@@ -248,6 +253,64 @@ func DiscoverSessions(claudeDir string) ([]*SessionSummary, error) {
 		}
 	}
 
+	return sessions, nil
+}
+
+type sessionFile struct {
+	path    string
+	project string
+	modTime time.Time
+}
+
+// DiscoverRecentSessions returns at most limit sessions, sorted by file modification time.
+// This avoids parsing all JSONL files by only parsing the most recently modified ones.
+func DiscoverRecentSessions(claudeDir string, limit int) ([]*SessionSummary, error) {
+	projectsDir := filepath.Join(claudeDir, "projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading projects directory: %w", err)
+	}
+
+	var files []sessionFile
+	for _, projEntry := range entries {
+		if !projEntry.IsDir() {
+			continue
+		}
+		projPath := filepath.Join(projectsDir, projEntry.Name())
+		projName := memory.DecodePath(projEntry.Name())
+
+		matches, err := filepath.Glob(filepath.Join(projPath, "*.jsonl"))
+		if err != nil {
+			continue
+		}
+		for _, f := range matches {
+			info, err := os.Stat(f)
+			if err != nil {
+				continue
+			}
+			files = append(files, sessionFile{path: f, project: projName, modTime: info.ModTime()})
+		}
+	}
+
+	// Sort by modification time descending (most recent first)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+
+	// Only parse the top N files
+	if len(files) > limit {
+		files = files[:limit]
+	}
+
+	var sessions []*SessionSummary
+	for _, f := range files {
+		s, err := ParseSessionFile(f.path)
+		if err != nil || s.MessageCount == 0 {
+			continue
+		}
+		s.Project = f.project
+		sessions = append(sessions, s)
+	}
 	return sessions, nil
 }
 

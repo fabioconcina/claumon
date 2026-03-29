@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/fabioconcina/claumon/internal/memory"
 	"github.com/fabioconcina/claumon/internal/parser"
@@ -22,6 +23,7 @@ type Handlers struct {
 	Version          string
 	SubscriptionType string
 	RateLimitTier    string
+	StuckThreshold   time.Duration
 }
 
 type memoryCache struct {
@@ -118,7 +120,20 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := parser.DiscoverTodaySessions(h.claudeDir)
+	var sessions []*parser.SessionSummary
+	var err error
+
+	if r.URL.Query().Get("range") == "all" {
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 500 {
+				limit = n
+			}
+		}
+		sessions, err = parser.DiscoverRecentSessions(h.claudeDir, limit)
+	} else {
+		sessions, err = parser.DiscoverTodaySessions(h.claudeDir)
+	}
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -126,7 +141,47 @@ func (h *Handlers) HandleSessions(w http.ResponseWriter, r *http.Request) {
 	if sessions == nil {
 		sessions = []*parser.SessionSummary{}
 	}
+	parser.EnrichSessionsWithProcessStatus(sessions, h.claudeDir, h.StuckThreshold)
 	writeJSON(w, sessions)
+}
+
+func (h *Handlers) HandleKillSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSONError(w, "missing session id", http.StatusBadRequest)
+		return
+	}
+
+	if err := parser.KillSession(h.claudeDir, id); err != nil {
+		writeJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	log.Printf("[process] Kill requested for session %s", id)
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handlers) HandleProcesses(w http.ResponseWriter, r *http.Request) {
+	procs := parser.DiscoverPIDFiles(h.claudeDir)
+	if procs == nil {
+		procs = []parser.PIDInfo{}
+	}
+	writeJSON(w, procs)
+}
+
+func (h *Handlers) HandleKillProcess(w http.ResponseWriter, r *http.Request) {
+	pidStr := r.PathValue("pid")
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		writeJSONError(w, "invalid pid", http.StatusBadRequest)
+		return
+	}
+
+	if err := parser.KillProcess(h.claudeDir, pid); err != nil {
+		writeJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	log.Printf("[process] Kill requested for PID %d", pid)
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {

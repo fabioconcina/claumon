@@ -180,6 +180,28 @@ tr.clickable { cursor: pointer; }
 .waste-badge.warn {
   background: rgba(232, 200, 114, 0.15); color: var(--yellow); border-color: rgba(232, 200, 114, 0.3);
 }
+.status-badge {
+  display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  vertical-align: middle; font-weight: 600;
+}
+.status-badge.active {
+  background: rgba(139, 213, 139, 0.15); color: var(--green); border: 1px solid rgba(139, 213, 139, 0.3);
+}
+.sessions-toggle {
+  display: inline-flex; font-size: 12px; gap: 0; margin-left: 12px; vertical-align: middle;
+}
+.sessions-toggle button {
+  padding: 3px 10px; border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-dim); cursor: pointer; font-size: 11px; font-weight: 500;
+}
+.sessions-toggle button:first-child { border-radius: 6px 0 0 6px; }
+.sessions-toggle button:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+.sessions-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.kill-btn {
+  background: rgba(217, 95, 95, 0.15); color: var(--red); border: 1px solid rgba(217, 95, 95, 0.3);
+  padding: 3px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600;
+}
+.kill-btn:hover { background: rgba(217, 95, 95, 0.3); }
 .mono { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; }
 
 /* Session detail panel */
@@ -801,8 +823,31 @@ tr.clickable { cursor: pointer; }
       <div class="heatmap-labels" id="heatmap-labels"></div>
     </div>
 
+    <div class="table-wrap" id="processes-section" style="margin-bottom:24px;display:none">
+      <h3>Running Processes</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>Chat</th>
+            <th>Project</th>
+            <th>Type</th>
+            <th>Uptime</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="processes-table"></tbody>
+      </table>
+    </div>
+
     <div class="table-wrap">
-      <h3>Active Sessions</h3>
+      <h3 style="display:flex;align-items:center">
+        Sessions
+        <span class="sessions-toggle" id="sessions-toggle">
+          <button class="active" data-range="today" onclick="setSessionRange('today')">Today</button>
+          <button data-range="all" onclick="setSessionRange('all')" title="Most recent 50 sessions">Recent</button>
+        </span>
+      </h3>
       <table>
         <thead>
           <tr>
@@ -812,6 +857,7 @@ tr.clickable { cursor: pointer; }
             <th>Tokens</th>
             <th>Cost</th>
             <th>Messages</th>
+            <th>Status</th>
             <th>Efficiency</th>
             <th>Last Activity</th>
           </tr>
@@ -865,6 +911,7 @@ tr.clickable { cursor: pointer; }
 // --- State ---
 let sseConnected = false;
 let sessionsData = [];
+let sessionRange = 'today';
 let memoriesData = [];
 let historyData = [];
 
@@ -1069,6 +1116,64 @@ function renderTokensChart() {
 
 document.getElementById('billable-toggle').addEventListener('change', renderTokensChart);
 
+// --- Running Processes ---
+function renderProcesses(procs) {
+  const section = document.getElementById('processes-section');
+  const tbody = document.getElementById('processes-table');
+  if (!procs.length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  tbody.innerHTML = procs.map(p => {
+    const uptime = p.startedAt ? fmtDuration(Date.now() - p.startedAt) : '—';
+    const proj = p.project || p.cwd || '—';
+    const shortProj = shortProject(proj);
+    const chatTitle = p.title || p.sessionId?.substring(0, 8) + '...' || '—';
+    return `
+      <tr>
+        <td class="mono">${p.pid}</td>
+        <td title="${escHtml(p.sessionId || '')}" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(chatTitle)}</td>
+        <td class="mono" title="${escHtml(proj)}">${escHtml(shortProj)}</td>
+        <td>${escHtml(p.entrypoint || p.kind || '—')}</td>
+        <td>${uptime}</td>
+        <td><button class="kill-btn" onclick="killProcess(${p.pid}, this, event)">Stop</button></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function fmtDuration(ms) {
+  if (ms < 0) return '—';
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return h + 'h ' + (m % 60) + 'm';
+  if (m > 0) return m + 'm';
+  return s + 's';
+}
+
+function fetchProcesses() {
+  fetch('/api/processes').then(r => r.json()).then(renderProcesses).catch(() => {});
+}
+
+function killProcess(pid, btn, evt) {
+  if (evt) evt.stopPropagation();
+  btn.disabled = true;
+  btn.textContent = 'Stopping...';
+  fetch('/api/processes/' + pid + '/kill', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) console.error('Kill failed:', data.error);
+      setTimeout(() => { fetchProcesses(); fetchSessions(); }, 500);
+    })
+    .catch(err => {
+      console.error('Kill error:', err);
+      btn.disabled = false;
+      btn.textContent = 'Stop';
+    });
+}
+
 function renderBillableChart(containerId, data) {
   const container = document.getElementById(containerId);
   if (!data.length) {
@@ -1133,8 +1238,9 @@ function renderBillableChart(containerId, data) {
 // --- Sessions Table ---
 function renderSessions(sessions) {
   const tbody = document.getElementById('sessions-table');
+  const label = sessionRange === 'all' ? 'No recent sessions found' : 'No sessions today';
   if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px">No sessions today</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-dim);padding:24px">${label}</td></tr>`;
     return;
   }
 
@@ -1148,6 +1254,7 @@ function renderSessions(sessions) {
       <td class="mono">${fmtNum(s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_create_tokens)}</td>
       <td class="mono">${fmtCost(s.estimated_cost_usd || 0)}</td>
       <td>${s.message_count || 0}</td>
+      <td>${renderStatusBadge(s)}</td>
       <td>${renderWasteFlags(s)}</td>
       <td style="color:var(--text-dim)">${fmtTimeAgo(s.last_activity)}</td>
     </tr>
@@ -1171,6 +1278,30 @@ function renderWasteFlags(s) {
       : 'Many tokens spent but no files were written or edited';
     return `<span class="${cls}" title="${tip}">${labels[f] || f}</span>`;
   }).join(' ');
+}
+
+function renderStatusBadge(s) {
+  if (s.is_running) {
+    return `<span class="status-badge active">active</span>`;
+  }
+  return '';
+}
+
+function setSessionRange(range) {
+  sessionRange = range;
+  document.querySelectorAll('#sessions-toggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === range);
+  });
+  fetchSessions();
+}
+
+function fetchSessions() {
+  const url = sessionRange === 'all' ? '/api/sessions?range=all' : '/api/sessions';
+  fetch(url).then(r => r.json()).then(data => {
+    sessionsData = data;
+    renderSessions(data);
+    if (sessionRange === 'today') renderHeatmap(data);
+  }).catch(() => {});
 }
 
 function shortProject(p) {
@@ -1204,6 +1335,7 @@ function openSessionDetail(sessionId) {
       <div class="meta-item"><span class="meta-label">Cache reuse:</span> <span class="meta-value">${session.cache_efficiency != null ? (session.cache_efficiency * 100).toFixed(1) + '%' : '—'}</span></div>
       <div class="meta-item"><span class="meta-label">File edits:</span> <span class="meta-value">${session.has_file_edits ? 'Yes' : 'No'}</span></div>
       ${(session.waste_flags || []).length ? `<div class="meta-item"><span class="meta-label">Waste:</span> <span class="meta-value">${renderWasteFlags(session)}</span></div>` : ''}
+      ${session.is_running ? `<div class="meta-item"><span class="meta-label">Status:</span> <span class="meta-value">${renderStatusBadge(session)}</span></div>` : ''}
     `;
   }
 
@@ -2030,11 +2162,8 @@ function updateTodaySummary(data) {
 function fetchAll() {
   fetch('/api/today').then(r => r.json()).then(updateTodaySummary).catch(() => {});
 
-  fetch('/api/sessions').then(r => r.json()).then(data => {
-    sessionsData = data;
-    renderSessions(data);
-    renderHeatmap(data);
-  }).catch(() => {});
+  fetchSessions();
+  fetchProcesses();
 
   fetch('/api/history?days=14').then(r => r.json()).then(data => {
     historyData = data;
@@ -2078,10 +2207,16 @@ function connectSSE() {
   });
 
   es.addEventListener('sessions', e => {
-    sessionsData = JSON.parse(e.data);
-    renderSessions(sessionsData);
-    renderHeatmap(sessionsData);
+    if (sessionRange === 'today') {
+      sessionsData = JSON.parse(e.data);
+      renderSessions(sessionsData);
+      renderHeatmap(sessionsData);
+    } else {
+      // In "all" view, refetch to include all sessions with enrichment
+      fetchSessions();
+    }
     fetch('/api/today').then(r => r.json()).then(updateTodaySummary);
+    fetchProcesses();
   });
 
   es.addEventListener('memory_changed', e => {
@@ -2128,6 +2263,7 @@ connectSSE();
 // Periodic refresh (every 60s as fallback)
 setInterval(() => {
   fetch('/api/today').then(r => r.json()).then(updateTodaySummary).catch(() => {});
+  fetchProcesses();
   // Refresh history charts too (new daily aggregates from backfill)
   fetch('/api/history?days=14').then(r => r.json()).then(data => {
     if (JSON.stringify(data) !== JSON.stringify(historyData)) {
