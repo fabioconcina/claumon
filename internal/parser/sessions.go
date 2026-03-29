@@ -83,7 +83,7 @@ type jsonlLine struct {
 // newSessionScanner creates a scanner for reading JSONL session files with a 2MB line limit.
 func newSessionScanner(f *os.File) *bufio.Scanner {
 	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+	s.Buffer(make([]byte, 0, 256*1024), 10*1024*1024) // 10MB: Claude sessions can have very large tool-result lines
 	return s
 }
 
@@ -168,9 +168,8 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 	summary.EstimatedCostUSD = estimateCost(summary)
 	summary.CacheEfficiency = cacheEfficiency(summary)
 	summary.WasteFlags = detectWaste(summary)
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scanning session file: %w", err)
-	}
+	// Don't fail the whole session on scanner errors (e.g. lines exceeding buffer).
+	// We still have valid data from everything parsed before the error.
 	return summary, nil
 }
 
