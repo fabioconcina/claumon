@@ -42,6 +42,7 @@ func New(claudeDir string) (*Watcher, error) {
 	// Watch all project directories and their memory subdirs
 	projectsDir := filepath.Join(claudeDir, "projects")
 	if entries, err := os.ReadDir(projectsDir); err == nil {
+		fsw.Add(projectsDir)
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
@@ -99,6 +100,14 @@ func (w *Watcher) Start(ctx context.Context) error {
 					memDir := filepath.Join(event.Name, "memory")
 					if _, err := os.Stat(memDir); err == nil {
 						w.fsw.Add(memDir)
+					}
+					// Scan for session files that arrived before watch was registered
+					if dirEntries, err := os.ReadDir(event.Name); err == nil {
+						for _, de := range dirEntries {
+							if !de.IsDir() {
+								w.classifyAndDispatch(filepath.Join(event.Name, de.Name()))
+							}
+						}
 					}
 					continue
 				}
