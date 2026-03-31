@@ -103,15 +103,9 @@ func main() {
 	parser.SetPricingTable(pricingTable)
 	log.Printf("Loaded pricing for %d models", len(pricingTable.Models()))
 
-	// Load credentials
-	creds, err := auth.Load(cfg.ClaudeDir, cfg.CredentialsPath)
-	if err != nil {
-		log.Printf("[auth] Could not load credentials: %v", err)
-		log.Printf("[auth] Usage API will be unavailable. Run 'claude /login' to authenticate.")
-		creds = &auth.Credentials{}
-	} else {
-		log.Printf("Loaded credentials: subscription=%s tier=%s", creds.SubscriptionType, creds.RateLimitTier)
-	}
+	// Load credentials with auto-reload support
+	provider := auth.NewProvider(cfg.ClaudeDir, cfg.CredentialsPath)
+	creds := provider.Credentials()
 
 	// Open SQLite store
 	st, err := store.Open(cfg.DBPath)
@@ -124,6 +118,7 @@ func main() {
 	// Setup HTTP server
 	webContent, _ := fs.Sub(webFS, "web")
 	srv := server.New(cfg.ClaudeDir, st, webContent)
+	srv.Handlers.AuthProvider = provider
 	srv.Handlers.Version = version
 	srv.Handlers.SubscriptionType = creds.SubscriptionType
 	srv.Handlers.RateLimitTier = creds.RateLimitTier
@@ -136,10 +131,10 @@ func main() {
 	// Start SSE broker
 	go srv.Broker.Run(ctx)
 
-	// Start usage poller
-	if creds.AccessToken != "" {
-		apiClient := api.NewClient(creds)
-		go pollUsage(ctx, apiClient, st, srv.Broker, srv.Handlers, time.Duration(cfg.PollIntervalSecs)*time.Second)
+	// Start usage poller (provider handles credential reload on expiry)
+	if provider.HasToken() {
+		apiClient := api.NewClient(provider)
+		go pollUsage(ctx, apiClient, provider, st, srv.Broker, srv.Handlers, time.Duration(cfg.PollIntervalSecs)*time.Second)
 	}
 
 	// Start file watcher
@@ -241,7 +236,7 @@ func main() {
 	log.Println("Bye!")
 }
 
-func pollUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, interval time.Duration) {
+func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, interval time.Duration) {
 	// Initial fetch with a small delay to avoid hitting the API immediately on every restart
 	select {
 	case <-ctx.Done():
@@ -249,9 +244,11 @@ func pollUsage(ctx context.Context, client *api.Client, st *store.Store, broker 
 	case <-time.After(5 * time.Second):
 	}
 	backoff := interval
+	lastAuthOK := true
 	if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
 		backoff = interval * 3
 		log.Printf("[poll] Backing off to %v", backoff)
+		lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
 	}
 
 	for {
@@ -262,11 +259,32 @@ func pollUsage(ctx context.Context, client *api.Client, st *store.Store, broker 
 			if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
 				backoff = min(backoff*2, 10*time.Minute)
 				log.Printf("[poll] Backing off to %v", backoff)
+				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
 			} else {
 				backoff = interval
+				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
 			}
 		}
 	}
+}
+
+func broadcastAuthStatus(provider *auth.Provider, broker *server.SSEBroker, lastAuthOK bool) bool {
+	status, msg := provider.Status()
+	isOK := status == auth.AuthOK
+
+	// Only broadcast on state change to avoid noise
+	if isOK != lastAuthOK {
+		evt := map[string]string{"status": status, "message": msg}
+		data, _ := json.Marshal(evt)
+		broker.Send(server.SSEEvent{Event: "auth_status", Data: string(data)})
+		if isOK {
+			log.Printf("[auth] Credentials recovered")
+		} else {
+			log.Printf("[auth] %s", msg)
+		}
+	}
+
+	return isOK
 }
 
 func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers) error {

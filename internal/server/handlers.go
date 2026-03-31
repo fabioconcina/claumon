@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fabioconcina/claumon/internal/auth"
 	"github.com/fabioconcina/claumon/internal/memory"
 	"github.com/fabioconcina/claumon/internal/parser"
 	"github.com/fabioconcina/claumon/internal/store"
@@ -20,6 +21,7 @@ type Handlers struct {
 	memories         memoryCache
 	usageMu          sync.RWMutex
 	latestUsage      map[string]interface{}
+	AuthProvider     *auth.Provider
 	Version          string
 	SubscriptionType string
 	RateLimitTier    string
@@ -271,12 +273,27 @@ func (h *Handlers) HandleSessionDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	isAPI := h.SubscriptionType == "" || h.SubscriptionType == "api"
-	writeJSON(w, map[string]interface{}{
+	info := map[string]interface{}{
 		"version":           h.Version,
 		"subscription_type": h.SubscriptionType,
 		"rate_limit_tier":   h.RateLimitTier,
 		"is_api_billing":    isAPI,
-	})
+	}
+	if h.AuthProvider != nil {
+		status, msg := h.AuthProvider.Status()
+		info["auth_status"] = status
+		info["auth_message"] = msg
+	}
+	writeJSON(w, info)
+}
+
+func (h *Handlers) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	if h.AuthProvider == nil {
+		writeJSON(w, map[string]string{"status": auth.AuthOK, "message": ""})
+		return
+	}
+	status, msg := h.AuthProvider.Status()
+	writeJSON(w, map[string]string{"status": status, "message": msg})
 }
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

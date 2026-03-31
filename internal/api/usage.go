@@ -54,38 +54,57 @@ type rawUsageResponse struct {
 	} `json:"extra_usage"`
 }
 
+// AuthError indicates an authentication failure that persists after credential reload.
+type AuthError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *AuthError) Error() string { return e.Message }
+
 type Client struct {
-	creds      *auth.Credentials
+	provider   *auth.Provider
 	httpClient *http.Client
 	logOnce    sync.Once
 }
 
-func NewClient(creds *auth.Credentials) *Client {
+func NewClient(provider *auth.Provider) *Client {
 	return &Client{
-		creds: creds,
+		provider: provider,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
+const usageURL = "https://api.anthropic.com/api/oauth/usage"
+
 func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.anthropic.com/api/oauth/usage", nil)
+	token := c.provider.GetToken()
+	resp, body, err := c.doUsageRequest(ctx, token)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.creds.AccessToken)
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetching usage: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+	// On 401, reload credentials and retry once
+	if resp.StatusCode == http.StatusUnauthorized {
+		log.Printf("[api] Got 401, attempting credential reload...")
+		if reloadErr := c.provider.Reload(); reloadErr != nil {
+			return nil, &AuthError{StatusCode: 401, Message: fmt.Sprintf("auth expired and credential reload failed: %v", reloadErr)}
+		}
+		newToken := c.provider.GetToken()
+		if newToken == token {
+			return nil, &AuthError{StatusCode: 401, Message: "auth expired (credentials on disk are also expired)"}
+		}
+		resp, body, err = c.doUsageRequest(ctx, newToken)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, &AuthError{StatusCode: 401, Message: "still unauthorized after credential reload"}
+		}
+		// Reset logOnce so we log the first successful response with new credentials
+		c.logOnce = sync.Once{}
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -111,6 +130,28 @@ func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
 	}
 
 	return mapUsageResponse(raw, body), nil
+}
+
+func (c *Client) doUsageRequest(ctx context.Context, token string) (*http.Response, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", usageURL, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching usage: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	return resp, body, nil
 }
 
 func mapUsageResponse(raw rawUsageResponse, body []byte) *UsageResponse {

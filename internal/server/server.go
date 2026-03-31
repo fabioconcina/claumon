@@ -21,6 +21,7 @@ func New(claudeDir string, st *store.Store, webFS fs.FS) *Server {
 
 	// API routes
 	mux.HandleFunc("GET /api/info", handlers.HandleInfo)
+	mux.HandleFunc("GET /api/auth/status", handlers.HandleAuthStatus)
 	mux.HandleFunc("GET /api/usage", handlers.HandleUsage)
 	mux.HandleFunc("GET /api/today", handlers.HandleToday)
 	mux.HandleFunc("GET /api/history", handlers.HandleHistory)

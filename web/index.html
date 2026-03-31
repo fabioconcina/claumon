@@ -34,6 +34,15 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* Top bar */
+.auth-banner {
+  display: none;
+  background: #4a3a1a;
+  color: #e8c872;
+  padding: 6px 16px;
+  font-size: 12px;
+  text-align: center;
+  border-bottom: 1px solid #5a4a2a;
+}
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 24px;
@@ -710,6 +719,10 @@ tr.clickable { cursor: pointer; }
   </div>
 </div>
 
+<div class="auth-banner" id="authBanner">
+  <span id="authMessage"></span>
+</div>
+
 <div class="tabs">
   <div class="tab active" data-tab="dashboard">Dashboard</div>
   <div class="tab" data-tab="memories">Memories <span id="staleness-badge" class="tab-badge" style="display:none">0</span></div>
@@ -991,8 +1004,9 @@ function updatePageTitle(sessionPct) {
 
 function updateUsageGauges(data) {
   if (data.available === false) {
-    updateGauge('session', 0, 'No data');
-    updateGauge('weekly', 0, 'No data');
+    const label = authExpired ? 'Auth expired' : 'No data';
+    updateGauge('session', 0, label);
+    updateGauge('weekly', 0, label);
     updatePageTitle(0);
     return;
   }
@@ -2152,8 +2166,12 @@ function layoutGraph(nodes, edges, width, height, nodeMap) {
 function updateTodaySummary(data) {
   const total = (data.input_tokens||0) + (data.output_tokens||0) + (data.cache_read_tokens||0) + (data.cache_create_tokens||0);
   document.getElementById('card-tokens').textContent = fmtNum(total);
+  const cacheRead = data.cache_read_tokens||0;
+  const cacheCreate = data.cache_create_tokens||0;
+  const cacheTotal = cacheRead + cacheCreate;
   document.getElementById('card-tokens-detail').textContent =
-    `In: ${fmtNum(data.input_tokens||0)} Out: ${fmtNum(data.output_tokens||0)}`;
+    `In: ${fmtNum(data.input_tokens||0)} Out: ${fmtNum(data.output_tokens||0)}` +
+    (cacheTotal ? ` Cache: ${fmtNum(cacheTotal)}` : '');
   document.getElementById('card-cost').textContent = fmtCost(data.cost_usd || 0);
   document.getElementById('card-sessions').textContent = data.session_count || 0;
   document.getElementById('card-messages').textContent = data.message_count || 0;
@@ -2182,6 +2200,19 @@ function fetchAll() {
   fetchConsolidation();
   fetchHealth();
   fetchGraph();
+}
+
+let authExpired = false;
+
+function showAuthBanner(status, message) {
+  const banner = document.getElementById('authBanner');
+  authExpired = status !== 'ok';
+  if (authExpired) {
+    document.getElementById('authMessage').textContent = message;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
 }
 
 // --- SSE ---
@@ -2242,6 +2273,11 @@ function connectSSE() {
     fetchGraph();
   });
 
+  es.addEventListener('auth_status', e => {
+    const data = JSON.parse(e.data);
+    showAuthBanner(data.status, data.message);
+  });
+
   es.addEventListener('ping', () => {
     document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
   });
@@ -2255,6 +2291,9 @@ fetch('/api/info').then(r => r.json()).then(info => {
   if (info.is_api_billing) {
     document.querySelector('#card-cost').parentElement.querySelector('.card-label').textContent = 'Estimated Cost';
     document.querySelector('#card-cost').parentElement.querySelector('.card-sub').textContent = 'today';
+  }
+  if (info.auth_status) {
+    showAuthBanner(info.auth_status, info.auth_message || '');
   }
 }).catch(() => {});
 fetchAll();
