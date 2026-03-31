@@ -2168,10 +2168,11 @@ function updateTodaySummary(data) {
   document.getElementById('card-tokens').textContent = fmtNum(total);
   const cacheRead = data.cache_read_tokens||0;
   const cacheCreate = data.cache_create_tokens||0;
-  const cacheTotal = cacheRead + cacheCreate;
+  let cacheParts = [];
+  if (cacheRead) cacheParts.push(`CRead: ${fmtNum(cacheRead)}`);
+  if (cacheCreate) cacheParts.push(`CWrite: ${fmtNum(cacheCreate)}`);
   document.getElementById('card-tokens-detail').textContent =
-    `In: ${fmtNum(data.input_tokens||0)} Out: ${fmtNum(data.output_tokens||0)}` +
-    (cacheTotal ? ` Cache: ${fmtNum(cacheTotal)}` : '');
+    [`In: ${fmtNum(data.input_tokens||0)}`, `Out: ${fmtNum(data.output_tokens||0)}`, ...cacheParts].join(' | ');
   document.getElementById('card-cost').textContent = fmtCost(data.cost_usd || 0);
   document.getElementById('card-sessions').textContent = data.session_count || 0;
   document.getElementById('card-messages').textContent = data.message_count || 0;
