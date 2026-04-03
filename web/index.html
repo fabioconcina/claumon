@@ -923,6 +923,7 @@ tr.clickable { cursor: pointer; }
 <script>
 // --- State ---
 let sseConnected = false;
+let sseRetryDelay = 2;
 let sessionsData = [];
 let sessionRange = 'today';
 let memoriesData = [];
@@ -1986,7 +1987,7 @@ function renderGraphView() {
   const width = Math.max(cw - 32, 600);
   const groupCount = new Set(filteredNodes.map(n => n.project)).size;
   const gridRows = Math.ceil(groupCount / Math.ceil(Math.sqrt(groupCount)));
-  const height = Math.max(400, gridRows * 180);
+  const height = Math.max(400, gridRows * 240);
   const nodes = filteredNodes.map(n => ({ ...n, x: 0, y: 0, vx: 0, vy: 0 }));
   const nodeMap = {};
   nodes.forEach(n => { nodeMap[n.id] = n; });
@@ -2016,10 +2017,13 @@ function renderGraphView() {
       maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
     });
     const padX = 55, padY = 40;
-    const gLabel = key === '__global__' ? 'Global' : key.split('/').pop();
-    svg += `<rect x="${minX-padX}" y="${minY-padY}" width="${maxX-minX+padX*2}" height="${maxY-minY+padY*2+20}"
+    const gLabel = key === '__global__' ? 'Global' : shortProject(key);
+    const rectW = maxX - minX + padX * 2;
+    svg += `<rect x="${minX-padX}" y="${minY-padY}" width="${rectW}" height="${maxY-minY+padY*2+20}"
       rx="12" fill="${groupColors[gi % groupColors.length]}" stroke="${groupColors[gi % groupColors.length].replace('0.08','0.2')}" stroke-width="1"/>`;
-    svg += `<text x="${minX-padX+10}" y="${minY-padY+16}" font-size="11" fill="var(--text-dim)" opacity="0.7">${escHtml(gLabel)}</text>`;
+    const maxLabelLen = Math.max(10, Math.floor(rectW / 7));
+    const truncLabel = gLabel.length > maxLabelLen ? gLabel.slice(0, maxLabelLen - 2) + '..' : gLabel;
+    svg += `<text x="${minX-padX+10}" y="${minY-padY+16}" font-size="11" fill="var(--text-dim)" opacity="0.7">${escHtml(truncLabel)}</text>`;
     gi++;
   }
 
@@ -2136,10 +2140,10 @@ function layoutGraph(nodes, edges, width, height, nodeMap) {
   const groupList = [...new Set(nodes.map(n => n.project || '__global__'))];
   const cols = Math.ceil(Math.sqrt(groupList.length));
   const rows = Math.ceil(groupList.length / cols);
-  const gap = 24;
+  const gap = 40;
   const cellW = (width - gap * (cols + 1)) / cols;
   const cellH = (height - gap * (rows + 1)) / rows;
-  const nodeSpacing = 90;
+  const idealSpacing = 130;
 
   // Group nodes by project
   const groupedNodes = {};
@@ -2154,10 +2158,19 @@ function layoutGraph(nodes, edges, width, height, nodeMap) {
     const cellCX = cellX + cellW / 2;
     const cellCY = cellY + cellH / 2;
     const gNodes = groupedNodes[g];
-    const totalW = (gNodes.length - 1) * nodeSpacing;
+    // Fit nodes in rows if they don't fit in one line
+    const maxPerRow = Math.max(1, Math.floor((cellW - 20) / idealSpacing) + 1);
+    const nRows = Math.ceil(gNodes.length / maxPerRow);
+    const perRow = Math.ceil(gNodes.length / nRows);
+    const spacing = Math.min(idealSpacing, Math.max(80, (cellW - 20) / Math.max(1, perRow - 1)));
+    const rowHeight = 50;
     gNodes.forEach((n, j) => {
-      n.x = cellCX - totalW / 2 + j * nodeSpacing;
-      n.y = cellCY;
+      const r = Math.floor(j / perRow);
+      const c = j % perRow;
+      const rowCount = Math.min(perRow, gNodes.length - r * perRow);
+      const totalW = (rowCount - 1) * spacing;
+      n.x = cellCX - totalW / 2 + c * spacing;
+      n.y = cellCY + (r - (nRows - 1) / 2) * rowHeight;
     });
   });
 }
@@ -2222,14 +2235,21 @@ function connectSSE() {
 
   es.onopen = () => {
     sseConnected = true;
+    sseRetryDelay = 2;
     document.getElementById('statusDot').classList.add('connected');
     document.getElementById('connStatus').textContent = 'Connected';
+    fetchAll();
   };
 
   es.onerror = () => {
     sseConnected = false;
     document.getElementById('statusDot').classList.remove('connected');
     document.getElementById('connStatus').textContent = 'Reconnecting...';
+    if (es.readyState === EventSource.CLOSED) {
+      const delay = Math.min(sseRetryDelay * 1000, 60000);
+      sseRetryDelay = Math.min(sseRetryDelay * 2, 60);
+      setTimeout(connectSSE, delay);
+    }
   };
 
   es.addEventListener('usage', e => {
