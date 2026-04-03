@@ -42,6 +42,7 @@ type SessionSummary struct {
 	HasFileEdits    bool      `json:"has_file_edits"`
 	CacheEfficiency float64   `json:"cache_efficiency"`
 	WasteFlags      []string  `json:"waste_flags"`
+	ContextLength   int       `json:"context_length"`
 	IsRunning       bool      `json:"is_running"`
 	IsStuck         bool      `json:"is_stuck"`
 	PID             int       `json:"pid,omitempty"`
@@ -57,8 +58,9 @@ type SessionMessage struct {
 	Text      string    `json:"text"`
 	TokensIn  int       `json:"tokens_in,omitempty"`
 	TokensOut int       `json:"tokens_out,omitempty"`
-	CacheRead int       `json:"cache_read,omitempty"`
-	ToolUse   string    `json:"tool_use,omitempty"`
+	CacheRead   int       `json:"cache_read,omitempty"`
+	CacheCreate int       `json:"cache_create,omitempty"`
+	ToolUse     string    `json:"tool_use,omitempty"`
 }
 
 type jsonlLine struct {
@@ -147,6 +149,7 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 					summary.OutputTokens += u.OutputTokens
 					summary.CacheReadTokens += u.CacheReadInputTokens
 					summary.CacheCreateTokens += u.CacheCreationInputTokens
+					summary.ContextLength = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 				}
 				if !summary.HasFileEdits && hasFileEditTool(entry.Message.Content) {
 					summary.HasFileEdits = true
@@ -380,6 +383,7 @@ func ParseSessionDetail(path string) ([]SessionMessage, error) {
 				msg.TokensIn = entry.Message.Usage.InputTokens
 				msg.TokensOut = entry.Message.Usage.OutputTokens
 				msg.CacheRead = entry.Message.Usage.CacheReadInputTokens
+				msg.CacheCreate = entry.Message.Usage.CacheCreationInputTokens
 			}
 			msg.Text = extractText(entry.Message.Content)
 			msg.ToolUse = extractToolUse(entry.Message.Content)

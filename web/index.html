@@ -1346,6 +1346,7 @@ function openSessionDetail(sessionId) {
       <div class="meta-item"><span class="meta-label">Model:</span> <span class="meta-value" style="color:var(--purple)">${escHtml(shortModel(session.model))}</span></div>
       <div class="meta-item"><span class="meta-label">Tokens:</span> <span class="meta-value">${fmtNum(session.input_tokens + session.output_tokens + session.cache_read_tokens + session.cache_create_tokens)}</span></div>
       <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">${fmtCost(session.estimated_cost_usd || 0)}</span></div>
+      <div class="meta-item"><span class="meta-label">Context:</span> <span class="meta-value">${fmtNum(session.context_length)}</span></div>
       <div class="meta-item"><span class="meta-label">Messages:</span> <span class="meta-value">${session.message_count}</span></div>
       <div class="meta-item"><span class="meta-label">Cache reuse:</span> <span class="meta-value">${session.cache_efficiency != null ? (session.cache_efficiency * 100).toFixed(1) + '%' : '—'}</span></div>
       <div class="meta-item"><span class="meta-label">File edits:</span> <span class="meta-value">${session.has_file_edits ? 'Yes' : 'No'}</span></div>
@@ -1369,9 +1370,9 @@ function openSessionDetail(sessionId) {
       body.innerHTML = messages.map(m => {
         const isUser = m.role === 'user';
         let tokensInfo = '';
-        if (m.tokens_in || m.tokens_out) {
-          tokensInfo = `in: ${fmtNum(m.tokens_in)} out: ${fmtNum(m.tokens_out)}`;
-          if (m.cache_read) tokensInfo += ` cache: ${fmtNum(m.cache_read)}`;
+        if (m.tokens_in || m.tokens_out || m.cache_read || m.cache_create) {
+          const ctx = (m.tokens_in || 0) + (m.cache_read || 0) + (m.cache_create || 0);
+          tokensInfo = `ctx: ${fmtNum(ctx)} out: ${fmtNum(m.tokens_out)}`;
         }
 
         let toolsHtml = '';
