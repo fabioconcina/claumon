@@ -59,6 +59,85 @@ Open [http://localhost:3131](http://localhost:3131) in your browser.
 
 claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works — only the API usage gauges are unavailable.
 
+## Run as a background service
+
+Run claumon automatically on login so the dashboard is always available. First, move the binary to a permanent location, then register the service.
+
+**macOS:**
+
+```bash
+mkdir -p ~/.local/bin
+mv claumon ~/.local/bin/
+# Add to PATH if not already: export PATH="$HOME/.local/bin:$PATH"
+claumon service install
+```
+
+Creates a LaunchAgent at `~/Library/LaunchAgents/com.claumon.dashboard.plist`. Logs go to `~/.claumon/claumon.log`.
+
+**Linux:**
+
+```bash
+mv claumon ~/.local/bin/
+claumon service install
+```
+
+Creates a systemd user unit at `~/.config/systemd/user/claumon.service`. Logs go to journald (`journalctl --user -u claumon`). By default, systemd user services stop when you log out. To keep claumon running after logout, enable lingering: `loginctl enable-linger $USER`.
+
+**Windows (PowerShell):**
+
+```powershell
+# Move the exe to a permanent location
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\claumon"
+Move-Item claumon-windows-amd64.exe "$env:LOCALAPPDATA\Programs\claumon\claumon.exe"
+
+# Add to PATH (current user, persists across sessions)
+$p = [Environment]::GetEnvironmentVariable('Path', 'User')
+[Environment]::SetEnvironmentVariable('Path', "$p;$env:LOCALAPPDATA\Programs\claumon", 'User')
+
+# Restart your terminal, then:
+claumon service install
+```
+
+Creates a scheduled task that runs at logon.
+
+**Manage the service:**
+
+```bash
+claumon service status     # check if running
+claumon service restart    # restart after config changes
+claumon service uninstall  # stop and remove
+```
+
+No root or admin required on any platform.
+
+## Self-update
+
+```bash
+claumon update
+```
+
+Checks GitHub releases for a newer version, downloads the right binary for your platform, and replaces the current one. If a background service is installed, it restarts automatically after the update.
+
+## Uninstall
+
+Remove the background service (if installed), delete the binary, and optionally remove local data (SQLite database, logs, config, pricing cache).
+
+**macOS / Linux:**
+
+```bash
+claumon service uninstall
+rm ~/.local/bin/claumon
+rm -rf ~/.claumon
+```
+
+**Windows (PowerShell):**
+
+```powershell
+claumon service uninstall
+Remove-Item (Get-Command claumon).Source
+Remove-Item -Recurse "$env:USERPROFILE\.claumon"
+```
+
 ## What it tracks
 
 ### Rate limits (live from Claude API)

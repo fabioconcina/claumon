@@ -42,7 +42,12 @@ func TestNewProvider_ValidCredentials(t *testing.T) {
 
 func TestNewProvider_NoCredentials(t *testing.T) {
 	dir := t.TempDir()
-	// No credentials file
+	// No credentials file — disable OS credential store fallback
+	old := osCredentialLoader
+	osCredentialLoader = func() ([]byte, error) {
+		return nil, fmt.Errorf("no OS credential store in test")
+	}
+	defer func() { osCredentialLoader = old }()
 
 	p := NewProvider(dir, "")
 	if p.HasToken() {

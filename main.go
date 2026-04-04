@@ -22,7 +22,9 @@ import (
 	"github.com/fabioconcina/claumon/internal/parser"
 	"github.com/fabioconcina/claumon/internal/pricing"
 	"github.com/fabioconcina/claumon/internal/server"
+	"github.com/fabioconcina/claumon/internal/service"
 	"github.com/fabioconcina/claumon/internal/store"
+	"github.com/fabioconcina/claumon/internal/updater"
 	"github.com/fabioconcina/claumon/internal/watcher"
 )
 
@@ -92,6 +94,21 @@ var version = "dev"
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version":
+			fmt.Println(version)
+			return
+		case "update":
+			runUpdate()
+			return
+		case "service":
+			runService()
+			return
+		}
+	}
+
 	openBrowser := flag.Bool("open", false, "Open dashboard in browser on startup")
 	flag.Parse()
 	cfg := loadConfig()
@@ -400,6 +417,92 @@ func backfillHistory(claudeDir string, st *store.Store) {
 	}
 
 	log.Printf("[backfill] Done: %d days from %d sessions", count, len(sessions))
+}
+
+func runUpdate() {
+	fmt.Printf("claumon %s — checking for updates...\n", version)
+
+	rel, err := updater.CheckLatest()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !updater.NeedsUpdate(version, rel.TagName) {
+		fmt.Printf("Already up to date (%s)\n", version)
+		return
+	}
+
+	fmt.Printf("New version available: %s → %s\n", version, rel.TagName)
+	newVersion, err := updater.Update(rel)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Updated to %s\n", newVersion)
+
+	// Restart service if installed
+	status, _ := service.Status()
+	if status != "not installed" {
+		fmt.Print("Restarting service... ")
+		if err := service.Restart(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed: %v\n", err)
+			fmt.Println("Run 'claumon service restart' manually.")
+		} else {
+			fmt.Println("done")
+		}
+	}
+}
+
+func runService() {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: claumon service <install|uninstall|status|restart>")
+		os.Exit(1)
+	}
+	action := os.Args[2]
+
+	switch action {
+	case "install":
+		execPath, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving executable path: %v\n", err)
+			os.Exit(1)
+		}
+		cfg := loadConfig()
+		if err := service.Install(execPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Service installed and started (port %d)\n", cfg.Port)
+		fmt.Printf("Dashboard: http://localhost:%d\n", cfg.Port)
+
+	case "uninstall":
+		if err := service.Uninstall(); err != nil {
+			fmt.Fprintf(os.Stderr, "Uninstall failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Service uninstalled")
+
+	case "status":
+		status, err := service.Status()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Service: %s\n", status)
+
+	case "restart":
+		if err := service.Restart(); err != nil {
+			fmt.Fprintf(os.Stderr, "Restart failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Service restarted")
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown action: %s\nUsage: claumon service <install|uninstall|status|restart>\n", action)
+		os.Exit(1)
+	}
 }
 
 func openURL(url string) error {

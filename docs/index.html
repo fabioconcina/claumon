@@ -369,6 +369,8 @@ footer a { color: var(--text); }
     <span class="pill">Memory browser</span>
     <span class="pill">Memory health scores</span>
     <span class="pill">Live updates</span>
+    <span class="pill">Background service</span>
+    <span class="pill">Self-update</span>
   </div>
   <div class="cta-group">
     <a href="https://github.com/fabioconcina/claumon/releases/latest" class="btn btn-primary">Download</a>
@@ -413,39 +415,49 @@ footer a { color: var(--text); }
     <div class="feature-card">
       <div class="feature-icon" style="background: rgba(125,191,184,0.15); color: var(--teal);">&#10070;</div>
       <h3>Memory graph &amp; health scores</h3>
-      <p>Interactive visualization of memory relationships. Per-file health grades (A–F) with improvement suggestions for stale or poorly structured memories.</p>
+      <p>Interactive visualization of memory relationships. Per-file health grades (A&ndash;F) with improvement suggestions for stale or poorly structured memories.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon" style="background: rgba(217,95,95,0.15); color: var(--red);">&#9889;</div>
       <h3>Real-time updates</h3>
       <p>Server-Sent Events push changes instantly. No polling, no manual refresh. Gauges, sessions, and memories update live.</p>
     </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background: rgba(143,188,143,0.15); color: var(--green);">&#9654;</div>
+      <h3>Background service</h3>
+      <p>Run <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;">claumon service install</code> once. Dashboard starts on login, restarts on crash. Works on macOS, Linux, and Windows.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background: rgba(232,200,114,0.15); color: var(--yellow);">&#8635;</div>
+      <h3>Self-update</h3>
+      <p>Run <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;">claumon update</code> to grab the latest release. Automatically restarts the background service if installed.</p>
+    </div>
   </div>
 </section>
 
 <!-- How it works -->
 <section class="how">
-  <h2>Three steps</h2>
+  <h2>Get started</h2>
   <div class="steps">
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-text">
-        <h3>Install</h3>
-        <p>Download a prebuilt binary or <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">go install</code>. One file, no dependencies.</p>
+        <h3>Download</h3>
+        <p>Grab a prebuilt binary or <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">go install</code>. One file, no dependencies.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-text">
-        <h3>Run</h3>
-        <p>Launch <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon --open</code>. It picks up your Claude credentials automatically.</p>
+        <h3>Run once or install as a service</h3>
+        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon --open</code> for a quick look, or <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon service install</code> to start it on login. Credentials are picked up automatically.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-text">
-        <h3>Use Claude Code</h3>
-        <p>Keep the tab open. Everything updates in real time as you work. Historical data persists in a local SQLite database.</p>
+        <h3>Keep it updated</h3>
+        <p>Run <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon update</code> to grab the latest release. The service restarts automatically.</p>
       </div>
     </div>
   </div>
@@ -464,7 +476,7 @@ footer a { color: var(--text); }
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-arm64">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-amd64">amd64</a>
       </div>
-      <div class="dl-note"><code>chmod +x claumon-darwin-* && xattr -d com.apple.quarantine claumon-darwin-*</code></div>
+      <div class="dl-note"><code>chmod +x claumon-darwin-*</code></div>
     </div>
     <div class="platform-card">
       <img src="https://cdn.simpleicons.org/linux/d4c5b9" width="32" height="32" alt="Linux">

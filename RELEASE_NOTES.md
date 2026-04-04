@@ -1,10 +1,11 @@
 ## Added
 
-- **Context length in session detail** — session detail view now shows the current context window size (input + cache read + cache create tokens)
-- **Cache read/write breakdown in today card** — token detail line splits cache into CRead and CWrite instead of a single combined value
+- **Background service** — `claumon service install` registers claumon to start automatically on login. Works cross-platform: LaunchAgent on macOS, systemd user unit on Linux, scheduled task on Windows. No root required.
+- **Self-update** — `claumon update` checks GitHub releases, downloads the correct binary for your platform, replaces the current one, and restarts the service if installed.
+- **Version subcommand** — `claumon version` prints the version and exits.
 
-## Fixed
+## Platform handling
 
-- **SSE reconnect on server restart** — EventSource now properly reconnects with exponential backoff when the server restarts, and refreshes all data on reconnect
-- **Graph label overlap** — memory graph uses more vertical space and truncates long project labels to prevent overlap
-- **New project directories not detected** — file watcher now watches the projects directory itself, so new project dirs are picked up immediately and their existing session files are scanned
+- **macOS** — automatically clears quarantine/provenance attributes and re-signs the binary after download or service restart, preventing Gatekeeper from blocking execution.
+- **Windows** — strips Mark of the Web (Zone.Identifier) on downloaded binaries to avoid SmartScreen blocks.
+- **Linux** — README documents `loginctl enable-linger` for keeping the service running after logout.

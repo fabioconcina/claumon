@@ -27,6 +27,10 @@ type credentialsFile struct {
 	} `json:"claudeAiOauth"`
 }
 
+// osCredentialLoader is the function used to load credentials from the OS
+// credential store. It is a variable so tests can override it.
+var osCredentialLoader = loadFromOSCredentialStore
+
 func Load(claudeDir string, credentialsPath string) (*Credentials, error) {
 	// Try explicit credentials path first, then default
 	path := credentialsPath
@@ -37,7 +41,7 @@ func Load(claudeDir string, credentialsPath string) (*Credentials, error) {
 	if err != nil {
 		// Fall back to OS credential store (VS Code extension stores credentials there)
 		log.Printf("[auth] Credentials file not found, trying OS credential store...")
-		data, err = loadFromOSCredentialStore()
+		data, err = osCredentialLoader()
 		if err != nil {
 			return nil, fmt.Errorf("no credentials file and OS credential store lookup failed: %w", err)
 		}
