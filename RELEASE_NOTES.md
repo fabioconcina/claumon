@@ -1,3 +1,3 @@
 ## Fixed
 
-- **Windows service install no longer requires admin** — replaced `schtasks` (which needed elevation) with a VBScript in the Startup folder. No admin privileges required, launches hidden with no console window.
+- **Memory link navigation on Windows** — clicking file links in the Memories health scores and Graph tab now correctly scrolls to the target. Backslashes in Windows paths were corrupting JS string literals and CSS selectors.

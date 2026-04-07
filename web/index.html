@@ -969,6 +969,9 @@ function escHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+function escJsAttr(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
 
 // --- Gauges ---
 function updateGauge(id, pct, resetStr) {
@@ -1862,7 +1865,7 @@ function renderHealthRow(s) {
       <span class="health-file-score" style="color:${healthBarColor(s.overall)}">${s.overall}</span>
       <div class="health-file-info">
         <div class="health-file-name">
-          <a href="#" onclick="scrollToMemory('${escHtml(s.path)}');return false" style="color:var(--accent)">${escHtml(label)}</a>
+          <a href="#" onclick="scrollToMemory('${escJsAttr(s.path)}');return false" style="color:var(--accent)">${escHtml(label)}</a>
           <span style="color:var(--text-dim);font-weight:400;font-size:11px;margin-left:6px">${escHtml(proj)}</span>
           ${hasPrompt ? `<button class="health-fix-btn" onclick="copyHealthPrompt(this, '${promptId}')" title="Copy a prompt to fix these issues in Claude Code">Fix</button>` : ''}
         </div>
@@ -1888,7 +1891,7 @@ function copyHealthPrompt(btn, id) {
 
 function scrollToMemory(path) {
   // Ensure memory section is expanded
-  const card = document.querySelector(`.memory-file[data-path="${path}"]`);
+  const card = document.querySelector(`.memory-file[data-path="${path.replace(/\\/g, '\\\\')}"]`);
   if (!card) return;
   // Open the parent section if collapsed
   const section = card.closest('.memory-section');
@@ -2075,7 +2078,7 @@ function renderGraphView() {
       document.querySelector('.tab[data-tab="memories"]').classList.add('active');
       document.getElementById('tab-memories').classList.add('active');
       setTimeout(() => {
-        const el = document.querySelector(`.memory-file[data-path="${id}"]`);
+        const el = document.querySelector(`.memory-file[data-path="${id.replace(/\\/g, '\\\\')}"]`);
         if (el) {
           const section = el.closest('.memory-section');
           if (section && !section.classList.contains('open')) section.classList.add('open');
