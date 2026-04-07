@@ -98,7 +98,7 @@ $p = [Environment]::GetEnvironmentVariable('Path', 'User')
 claumon service install
 ```
 
-Creates a scheduled task that runs at logon.
+Adds claumon to the Windows Startup folder — it launches automatically (hidden) on login.
 
 **Manage the service:**
 

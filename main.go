@@ -474,15 +474,18 @@ func runService() {
 			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Service installed and started (port %d)\n", cfg.Port)
+		fmt.Printf("claumon %s — service installed and started (port %d)\n", version, cfg.Port)
 		fmt.Printf("Dashboard: http://localhost:%d\n", cfg.Port)
+		fmt.Println()
+		fmt.Println("claumon will start automatically on login.")
+		fmt.Println("To stop:   claumon service uninstall")
 
 	case "uninstall":
 		if err := service.Uninstall(); err != nil {
 			fmt.Fprintf(os.Stderr, "Uninstall failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Service uninstalled")
+		fmt.Println("Service stopped and removed from startup.")
 
 	case "status":
 		status, err := service.Status()

@@ -4,64 +4,81 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
-const windowsTaskName = "claumon"
+func startupDir() string {
+	return filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+}
 
+func vbsPath() string {
+	return filepath.Join(startupDir(), "claumon.vbs")
+}
+
+// Install creates a VBScript in the Startup folder that launches claumon
+// hidden (no console window). No admin privileges required.
 func Install(execPath string) error {
 	clearMarkOfTheWeb(execPath)
-	err := exec.Command("schtasks", "/create",
-		"/tn", windowsTaskName,
-		"/tr", execPath,
-		"/sc", "onlogon",
-		"/rl", "limited",
-		"/f",
-	).Run()
-	if err != nil {
-		return fmt.Errorf("creating scheduled task: %w", err)
+
+	// VBScript launches the exe hidden (0 = hidden window)
+	script := fmt.Sprintf("CreateObject(\"WScript.Shell\").Run \"%s\", 0, False\r\n", execPath)
+
+	if err := os.WriteFile(vbsPath(), []byte(script), 0644); err != nil {
+		return fmt.Errorf("writing startup script: %w", err)
 	}
 
-	if err := exec.Command("schtasks", "/run", "/tn", windowsTaskName).Run(); err != nil {
-		return fmt.Errorf("starting task: %w", err)
+	// Start it now
+	if err := exec.Command("wscript.exe", vbsPath()).Start(); err != nil {
+		return fmt.Errorf("starting claumon: %w", err)
 	}
 	return nil
 }
 
 func Uninstall() error {
-	exec.Command("schtasks", "/end", "/tn", windowsTaskName).Run()
+	// Kill any running instance
+	exec.Command("taskkill", "/f", "/im", "claumon.exe").Run()
 
-	if err := exec.Command("schtasks", "/delete", "/tn", windowsTaskName, "/f").Run(); err != nil {
-		return fmt.Errorf("deleting scheduled task: %w", err)
+	if err := os.Remove(vbsPath()); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing startup script: %w", err)
 	}
 	return nil
 }
 
 func Status() (string, error) {
-	out, err := exec.Command("schtasks", "/query", "/tn", windowsTaskName, "/fo", "list").CombinedOutput()
-	if err != nil {
+	_, err := os.Stat(vbsPath())
+	installed := err == nil
+
+	out, _ := exec.Command("tasklist", "/fi", "imagename eq claumon.exe", "/fo", "csv", "/nh").CombinedOutput()
+	running := strings.Contains(string(out), "claumon.exe")
+
+	switch {
+	case installed && running:
+		return "running", nil
+	case installed:
+		return "installed (not running)", nil
+	default:
 		return "not installed", nil
 	}
-	outStr := string(out)
-	if strings.Contains(outStr, "Running") {
-		return "running", nil
-	}
-	if strings.Contains(outStr, "Ready") {
-		return "installed (not running)", nil
-	}
-	return "installed (status unknown)", nil
 }
 
 func Restart() error {
-	exec.Command("schtasks", "/end", "/tn", windowsTaskName).Run()
-	// Query the task to find the binary path and clear Mark of the Web
-	if out, err := exec.Command("schtasks", "/query", "/tn", windowsTaskName, "/fo", "list", "/v").CombinedOutput(); err == nil {
-		if execPath := extractTaskAction(string(out)); execPath != "" {
+	exec.Command("taskkill", "/f", "/im", "claumon.exe").Run()
+
+	path := vbsPath()
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("startup script not found — is the service installed?")
+	}
+
+	// Re-read the VBS to find the exe path and clear MotW
+	if data, err := os.ReadFile(path); err == nil {
+		if execPath := extractVBSPath(string(data)); execPath != "" {
 			clearMarkOfTheWeb(execPath)
 		}
 	}
-	if err := exec.Command("schtasks", "/run", "/tn", windowsTaskName).Run(); err != nil {
-		return fmt.Errorf("restarting task: %w", err)
+
+	if err := exec.Command("wscript.exe", path).Start(); err != nil {
+		return fmt.Errorf("restarting claumon: %w", err)
 	}
 	return nil
 }
@@ -72,15 +89,17 @@ func clearMarkOfTheWeb(path string) {
 	os.Remove(path + ":Zone.Identifier")
 }
 
-// extractTaskAction parses the binary path from schtasks /query /v output.
-func extractTaskAction(output string) string {
-	for _, line := range strings.Split(output, "\n") {
-		if strings.Contains(line, "Task To Run:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1])
-			}
-		}
+// extractVBSPath pulls the exe path from the VBS script content.
+func extractVBSPath(content string) string {
+	// Script format: CreateObject("WScript.Shell").Run "C:\...\claumon.exe", 0, False
+	start := strings.Index(content, ".Run \"")
+	if start == -1 {
+		return ""
 	}
-	return ""
+	rest := content[start+6:]
+	end := strings.Index(rest, "\"")
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
 }

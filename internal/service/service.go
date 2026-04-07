@@ -3,5 +3,5 @@
 // Supported platforms:
 //   - macOS: LaunchAgent in ~/Library/LaunchAgents/
 //   - Linux: systemd user unit in ~/.config/systemd/user/
-//   - Windows: scheduled task via schtasks
+//   - Windows: VBScript in the Startup folder
 package service
