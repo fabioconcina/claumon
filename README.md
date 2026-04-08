@@ -24,7 +24,14 @@ It gives you rate limit gauges, per-session token breakdowns, cost estimates, hi
 
 ## Quick start
 
-Download a prebuilt binary from [the latest release](https://github.com/fabioconcina/claumon/releases/latest):
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install fabioconcina/claumon/claumon
+claumon
+```
+
+**Download a prebuilt binary** from [the latest release](https://github.com/fabioconcina/claumon/releases/latest):
 
 ```bash
 # macOS (Apple Silicon)
@@ -48,7 +55,7 @@ chmod +x claumon
 # Or run: Unblock-File claumon-windows-amd64.exe
 ```
 
-Or build from source:
+**Build from source:**
 
 ```bash
 go install github.com/fabioconcina/claumon@latest
