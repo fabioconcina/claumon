@@ -15,9 +15,25 @@ builds:
       - arm64
 
 archives:
-  - formats:
+  - id: binaries
+    formats:
       - binary
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+  - id: homebrew
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+brews:
+  - ids:
+      - homebrew
+    repository:
+      owner: fabioconcina
+      name: homebrew-claumon
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/fabioconcina/claumon"
+    description: "Real-time Claude Code dashboard — monitors API usage, token costs, sessions, and memory files"
+    license: "MIT"
 
 release:
   header: "{{ .Env.RELEASE_NOTES }}"
