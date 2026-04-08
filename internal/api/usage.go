@@ -62,6 +62,18 @@ type AuthError struct {
 
 func (e *AuthError) Error() string { return e.Message }
 
+// RateLimitError indicates a 429 response with an optional Retry-After duration.
+type RateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitError) Error() string {
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("usage API rate limited (429), retry after %v", e.RetryAfter)
+	}
+	return "usage API rate limited (429)"
+}
+
 type Client struct {
 	provider   *auth.Provider
 	httpClient *http.Client
@@ -108,11 +120,14 @@ func (c *Client) FetchUsage(ctx context.Context) (*UsageResponse, error) {
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		retryAfter := resp.Header.Get("Retry-After")
-		if retryAfter != "" {
-			return nil, fmt.Errorf("usage API rate limited (429), retry after %s", retryAfter)
+		var retryAfter time.Duration
+		if s := resp.Header.Get("Retry-After"); s != "" {
+			var secs int
+			if _, err := fmt.Sscan(s, &secs); err == nil && secs > 0 {
+				retryAfter = time.Duration(secs) * time.Second
+			}
 		}
-		return nil, fmt.Errorf("usage API rate limited (429)")
+		return nil, &RateLimitError{RetryAfter: retryAfter}
 	}
 
 	if resp.StatusCode != http.StatusOK {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -263,7 +264,7 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 	backoff := interval
 	lastAuthOK := true
 	if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
-		backoff = interval * 3
+		backoff = retryBackoff(err, interval*3)
 		log.Printf("[poll] Backing off to %v", backoff)
 		lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
 	}
@@ -274,7 +275,7 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 			return
 		case <-time.After(backoff):
 			if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
-				backoff = min(backoff*2, 10*time.Minute)
+				backoff = retryBackoff(err, min(backoff*2, 10*time.Minute))
 				log.Printf("[poll] Backing off to %v", backoff)
 				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
 			} else {
@@ -302,6 +303,16 @@ func broadcastAuthStatus(provider *auth.Provider, broker *server.SSEBroker, last
 	}
 
 	return isOK
+}
+
+// retryBackoff returns the Retry-After duration from a RateLimitError if it exceeds
+// the default backoff, otherwise returns the default.
+func retryBackoff(err error, defaultBackoff time.Duration) time.Duration {
+	var rle *api.RateLimitError
+	if errors.As(err, &rle) && rle.RetryAfter > defaultBackoff {
+		return rle.RetryAfter
+	}
+	return defaultBackoff
 }
 
 func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers) error {
