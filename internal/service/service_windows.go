@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -63,7 +64,7 @@ func Status() (string, error) {
 }
 
 func Restart() error {
-	exec.Command("taskkill", "/f", "/im", "claumon.exe").Run()
+	killOtherInstances()
 
 	path := vbsPath()
 	if _, err := os.Stat(path); err != nil {
@@ -81,6 +82,29 @@ func Restart() error {
 		return fmt.Errorf("restarting claumon: %w", err)
 	}
 	return nil
+}
+
+// killOtherInstances kills all claumon.exe processes except the current one.
+func killOtherInstances() {
+	myPID := os.Getpid()
+	out, err := exec.Command("tasklist", "/fi", "imagename eq claumon.exe", "/fo", "csv", "/nh").CombinedOutput()
+	if err != nil {
+		// Fallback: kill all (old behavior)
+		exec.Command("taskkill", "/f", "/im", "claumon.exe").Run()
+		return
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), "\",\"")
+		if len(fields) < 2 {
+			continue
+		}
+		pidStr := strings.Trim(fields[1], "\"")
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid == myPID {
+			continue
+		}
+		exec.Command("taskkill", "/f", "/pid", strconv.Itoa(pid)).Run()
+	}
 }
 
 // clearMarkOfTheWeb removes the Zone.Identifier alternate data stream
