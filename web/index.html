@@ -1008,13 +1008,24 @@ function updatePageTitle(sessionPct) {
 
 function updateUsageGauges(data) {
   if (data.available === false) {
-    const label = authExpired ? 'Auth expired' : 'No data';
+    const label = data.poll_error ? 'Poll error' : (authExpired ? 'Auth expired' : 'No data');
     updateGauge('session', 0, label);
     updateGauge('weekly', 0, label);
     updatePageTitle(0);
     return;
   }
-  updateGauge('session', data.session_pct || 0, data.session_reset || '');
+  // Detect stale data: last_poll_at older than 5 minutes
+  let sessionSub = data.session_reset || '';
+  if (data.poll_error) {
+    sessionSub = 'Stale — poll failing';
+  } else if (data.last_poll_at) {
+    const ageS = Math.floor(Date.now() / 1000) - data.last_poll_at;
+    if (ageS > 300) {
+      const mins = Math.floor(ageS / 60);
+      sessionSub = 'Stale (' + mins + 'm ago)';
+    }
+  }
+  updateGauge('session', data.session_pct || 0, sessionSub);
   updateGauge('weekly', data.weekly_pct || 0, data.weekly_reset || '');
   updatePageTitle(data.session_pct || 0);
 
@@ -2209,6 +2220,11 @@ function fetchAll() {
 
   fetch('/api/usage').then(r => r.json()).then(updateUsageGauges).catch(() => {});
 
+  // Always check current auth status (catches persistent failures missed by SSE)
+  fetch('/api/auth/status').then(r => r.json()).then(data => {
+    showAuthBanner(data.status, data.message);
+  }).catch(() => {});
+
   fetch('/api/memories').then(r => r.json()).then(data => {
     memoriesData = data;
     renderMemories(data);
@@ -2328,6 +2344,10 @@ connectSSE();
 setInterval(() => {
   fetch('/api/today').then(r => r.json()).then(updateTodaySummary).catch(() => {});
   fetchProcesses();
+  fetch('/api/usage').then(r => r.json()).then(updateUsageGauges).catch(() => {});
+  fetch('/api/auth/status').then(r => r.json()).then(data => {
+    showAuthBanner(data.status, data.message);
+  }).catch(() => {});
   // Refresh history charts too (new daily aggregates from backfill)
   fetch('/api/history?days=14').then(r => r.json()).then(data => {
     if (JSON.stringify(data) !== JSON.stringify(historyData)) {

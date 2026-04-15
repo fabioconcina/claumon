@@ -21,6 +21,8 @@ type Handlers struct {
 	memories         memoryCache
 	usageMu          sync.RWMutex
 	latestUsage      map[string]interface{}
+	lastPollOK       time.Time
+	lastPollError    string
 	AuthProvider     *auth.Provider
 	Version          string
 	SubscriptionType string
@@ -73,12 +75,22 @@ func (h *Handlers) getMemories() memoryCache {
 func (h *Handlers) SetLatestUsage(data map[string]interface{}) {
 	h.usageMu.Lock()
 	h.latestUsage = data
+	h.lastPollOK = time.Now()
+	h.lastPollError = ""
+	h.usageMu.Unlock()
+}
+
+func (h *Handlers) SetPollError(errMsg string) {
+	h.usageMu.Lock()
+	h.lastPollError = errMsg
 	h.usageMu.Unlock()
 }
 
 func (h *Handlers) HandleUsage(w http.ResponseWriter, r *http.Request) {
 	h.usageMu.RLock()
 	data := h.latestUsage
+	lastOK := h.lastPollOK
+	pollErr := h.lastPollError
 	h.usageMu.RUnlock()
 
 	if data == nil {
@@ -86,10 +98,22 @@ func (h *Handlers) HandleUsage(w http.ResponseWriter, r *http.Request) {
 			"session_pct": 0,
 			"weekly_pct":  0,
 			"available":   false,
+			"poll_error":  pollErr,
 		})
 		return
 	}
-	writeJSON(w, data)
+	// Clone to avoid mutating cached data
+	resp := make(map[string]interface{}, len(data)+2)
+	for k, v := range data {
+		resp[k] = v
+	}
+	if !lastOK.IsZero() {
+		resp["last_poll_at"] = lastOK.Unix()
+	}
+	if pollErr != "" {
+		resp["poll_error"] = pollErr
+	}
+	writeJSON(w, resp)
 }
 
 func (h *Handlers) HandleToday(w http.ResponseWriter, r *http.Request) {

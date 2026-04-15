@@ -264,6 +264,7 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 	backoff := interval
 	lastAuthOK := true
 	if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
+		handlers.SetPollError(err.Error())
 		backoff = retryBackoff(err, interval*3)
 		log.Printf("[poll] Backing off to %v", backoff)
 		lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
@@ -275,6 +276,7 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 			return
 		case <-time.After(backoff):
 			if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
+				handlers.SetPollError(err.Error())
 				backoff = retryBackoff(err, min(backoff*2, 10*time.Minute))
 				log.Printf("[poll] Backing off to %v", backoff)
 				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
@@ -290,16 +292,18 @@ func broadcastAuthStatus(provider *auth.Provider, broker *server.SSEBroker, last
 	status, msg := provider.Status()
 	isOK := status == auth.AuthOK
 
-	// Only broadcast on state change to avoid noise
+	// Always broadcast when not OK so the frontend stays informed
 	if isOK != lastAuthOK {
-		evt := map[string]string{"status": status, "message": msg}
-		data, _ := json.Marshal(evt)
-		broker.Send(server.SSEEvent{Event: "auth_status", Data: string(data)})
 		if isOK {
 			log.Printf("[auth] Credentials recovered")
 		} else {
 			log.Printf("[auth] %s", msg)
 		}
+	}
+	if !isOK || isOK != lastAuthOK {
+		evt := map[string]string{"status": status, "message": msg}
+		data, _ := json.Marshal(evt)
+		broker.Send(server.SSEEvent{Event: "auth_status", Data: string(data)})
 	}
 
 	return isOK
