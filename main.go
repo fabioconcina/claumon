@@ -263,27 +263,56 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 	}
 	backoff := interval
 	lastAuthOK := true
-	if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
-		handlers.SetPollError(err.Error())
-		backoff = retryBackoff(err, interval*3)
-		log.Printf("[poll] Backing off to %v", backoff)
-		lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
+	authWaiting := false
+
+	doFetch := func() {
+		// When auth is expired, don't hit the API — just try reloading credentials
+		status, _ := provider.Status()
+		if status != auth.AuthOK {
+			if err := provider.Reload(); err != nil || func() bool { s, _ := provider.Status(); return s != auth.AuthOK }() {
+				if !authWaiting {
+					log.Printf("[poll] Auth expired, waiting for credentials to refresh (checking every 30s)")
+					handlers.SetPollError("auth expired — waiting for credentials to refresh")
+					authWaiting = true
+				}
+				backoff = 30 * time.Second
+				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
+				return
+			}
+			log.Printf("[poll] Auth recovered, resuming API polling")
+			authWaiting = false
+		}
+
+		if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
+			var authErr *api.AuthError
+			if errors.As(err, &authErr) {
+				// Auth failed at the API level — don't keep retrying
+				if !authWaiting {
+					log.Printf("[poll] Auth expired, waiting for credentials to refresh (checking every 30s)")
+					handlers.SetPollError("auth expired — waiting for credentials to refresh")
+					authWaiting = true
+				}
+				backoff = 30 * time.Second
+			} else {
+				handlers.SetPollError(err.Error())
+				backoff = retryBackoff(err, min(backoff*2, 10*time.Minute))
+				log.Printf("[poll] Backing off to %v", backoff)
+			}
+			lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
+		} else {
+			backoff = interval
+			authWaiting = false
+			lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
+		}
 	}
 
+	doFetch()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
-			if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
-				handlers.SetPollError(err.Error())
-				backoff = retryBackoff(err, min(backoff*2, 10*time.Minute))
-				log.Printf("[poll] Backing off to %v", backoff)
-				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
-			} else {
-				backoff = interval
-				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
-			}
+			doFetch()
 		}
 	}
 }
