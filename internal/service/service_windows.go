@@ -1,12 +1,15 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func startupDir() string {
@@ -65,6 +68,7 @@ func Status() (string, error) {
 
 func Restart() error {
 	killOtherInstances()
+	waitForPortFree(configuredPort(), 3*time.Second)
 
 	path := vbsPath()
 	if _, err := os.Stat(path); err != nil {
@@ -104,6 +108,41 @@ func killOtherInstances() {
 			continue
 		}
 		exec.Command("taskkill", "/f", "/pid", strconv.Itoa(pid)).Run()
+	}
+}
+
+// configuredPort reads the port from the user's config file, defaulting to 3131.
+func configuredPort() int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 3131
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claumon", "config.json"))
+	if err != nil {
+		return 3131
+	}
+	var cfg struct {
+		Port int `json:"port"`
+	}
+	if json.Unmarshal(data, &cfg) != nil || cfg.Port == 0 {
+		return 3131
+	}
+	return cfg.Port
+}
+
+// waitForPortFree polls until the given TCP port is no longer in use,
+// up to the specified timeout. This prevents the new service from failing
+// to bind after force-killing the old process.
+func waitForPortFree(port int, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	for time.Now().Before(deadline) {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			ln.Close()
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 
