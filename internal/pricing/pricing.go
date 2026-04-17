@@ -212,8 +212,27 @@ func saveCache(models map[string]ModelPricing) {
 		log.Printf("[pricing] Failed to create cache directory: %v", err)
 		return
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Printf("[pricing] Failed to write cache file: %v", err)
+	// Write to temp + rename so a crash mid-write can't leave a truncated cache.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "pricing-*.tmp")
+	if err != nil {
+		log.Printf("[pricing] Failed to create temp cache file: %v", err)
+		return
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		log.Printf("[pricing] Failed to write temp cache file: %v", err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		log.Printf("[pricing] Failed to close temp cache file: %v", err)
+		return
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		log.Printf("[pricing] Failed to rename cache file: %v", err)
 	}
 }
 

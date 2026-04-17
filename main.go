@@ -57,8 +57,7 @@ func defaultConfig() Config {
 
 func loadConfig() Config {
 	cfg := defaultConfig()
-	home, _ := os.UserHomeDir()
-	configPath := filepath.Join(home, ".claumon", "config.json")
+	configPath := filepath.Join(filepath.Dir(cfg.DBPath), "config.json")
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -70,20 +69,21 @@ func loadConfig() Config {
 	}
 
 	// Re-apply defaults for zero values
+	defaults := defaultConfig()
 	if cfg.Port == 0 {
-		cfg.Port = 3131
+		cfg.Port = defaults.Port
 	}
 	if cfg.PollIntervalSecs == 0 {
-		cfg.PollIntervalSecs = 120
+		cfg.PollIntervalSecs = defaults.PollIntervalSecs
 	}
 	if cfg.ClaudeDir == "" {
-		cfg.ClaudeDir = filepath.Join(home, ".claude")
+		cfg.ClaudeDir = defaults.ClaudeDir
 	}
 	if cfg.DBPath == "" {
-		cfg.DBPath = filepath.Join(home, ".claumon", "usage.db")
+		cfg.DBPath = defaults.DBPath
 	}
 	if cfg.RetentionDays == 0 {
-		cfg.RetentionDays = 90
+		cfg.RetentionDays = defaults.RetentionDays
 	}
 	if cfg.StuckThresholdMins == 0 {
 		cfg.StuckThresholdMins = 10
@@ -114,12 +114,12 @@ func main() {
 	flag.Parse()
 	cfg := loadConfig()
 
-	log.Printf("claumon starting — port=%d claude_dir=%s", cfg.Port, cfg.ClaudeDir)
+	log.Printf("[startup] claumon starting — port=%d claude_dir=%s", cfg.Port, cfg.ClaudeDir)
 
 	// Load pricing table (embedded → cache → remote → config overrides)
 	pricingTable := pricing.Load(cfg.PricingOverrides)
 	parser.SetPricingTable(pricingTable)
-	log.Printf("Loaded pricing for %d models", len(pricingTable.Models()))
+	log.Printf("[pricing] loaded pricing for %d models", len(pricingTable.Models()))
 
 	// Load credentials with auto-reload support
 	provider := auth.NewProvider(cfg.ClaudeDir, cfg.CredentialsPath)
@@ -128,10 +128,10 @@ func main() {
 	// Open SQLite store
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		log.Fatalf("[startup] failed to open database: %v", err)
 	}
 	defer st.Close()
-	log.Printf("Database opened at %s", cfg.DBPath)
+	log.Printf("[startup] database opened at %s", cfg.DBPath)
 
 	// Setup HTTP server
 	webContent, _ := fs.Sub(webFS, "web")
@@ -166,8 +166,7 @@ func main() {
 			sessions, err := parser.DiscoverTodaySessions(cfg.ClaudeDir)
 			if err == nil {
 				parser.EnrichSessionsWithProcessStatus(sessions, cfg.ClaudeDir, stuckThreshold)
-				data, _ := json.Marshal(sessions)
-				srv.Broker.Send(server.SSEEvent{Event: "sessions", Data: string(data)})
+				srv.Broker.SendJSON("sessions", sessions)
 			}
 			// Update daily aggregate
 			updateDailyAggregate(cfg.ClaudeDir, st)
@@ -176,9 +175,7 @@ func main() {
 		w.OnMemoryChange(func(path string) {
 			log.Printf("[watcher] Memory changed: %s", filepath.Base(path))
 			srv.Handlers.RefreshMemories()
-			evt := map[string]string{"path": path}
-			data, _ := json.Marshal(evt)
-			srv.Broker.Send(server.SSEEvent{Event: "memory_changed", Data: string(data)})
+			srv.Broker.SendJSON("memory_changed", map[string]string{"path": path})
 		})
 
 		go w.Start(ctx)
@@ -220,9 +217,9 @@ func main() {
 
 	dashboardURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	go func() {
-		log.Printf("Dashboard available at %s", dashboardURL)
+		log.Printf("[startup] dashboard available at %s", dashboardURL)
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
+			log.Fatalf("[startup] HTTP server error: %v", err)
 		}
 	}()
 
@@ -241,7 +238,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
-	log.Println("Shutting down...")
+	log.Printf("[shutdown] stopping...")
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -251,7 +248,7 @@ func main() {
 	if w != nil {
 		w.Close()
 	}
-	log.Println("Bye!")
+	log.Printf("[shutdown] bye")
 }
 
 func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, interval time.Duration) {
@@ -261,60 +258,81 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 		return
 	case <-time.After(5 * time.Second):
 	}
-	backoff := interval
-	lastAuthOK := true
-	authWaiting := false
-
-	doFetch := func() {
-		// When auth is expired, don't hit the API — just try reloading credentials
-		status, _ := provider.Status()
-		if status != auth.AuthOK {
-			if err := provider.Reload(); err != nil || func() bool { s, _ := provider.Status(); return s != auth.AuthOK }() {
-				if !authWaiting {
-					log.Printf("[poll] Auth expired, waiting for credentials to refresh (checking every 30s)")
-					handlers.SetPollError("auth expired — waiting for credentials to refresh")
-					authWaiting = true
-				}
-				backoff = 30 * time.Second
-				lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
-				return
-			}
-			log.Printf("[poll] Auth recovered, resuming API polling")
-			authWaiting = false
-		}
-
-		if err := fetchAndBroadcastUsage(ctx, client, st, broker, handlers); err != nil {
-			var authErr *api.AuthError
-			if errors.As(err, &authErr) {
-				// Auth failed at the API level — don't keep retrying
-				if !authWaiting {
-					log.Printf("[poll] Auth expired, waiting for credentials to refresh (checking every 30s)")
-					handlers.SetPollError("auth expired — waiting for credentials to refresh")
-					authWaiting = true
-				}
-				backoff = 30 * time.Second
-			} else {
-				handlers.SetPollError(err.Error())
-				backoff = retryBackoff(err, min(backoff*2, 10*time.Minute))
-				log.Printf("[poll] Backing off to %v", backoff)
-			}
-			lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
-		} else {
-			backoff = interval
-			authWaiting = false
-			lastAuthOK = broadcastAuthStatus(provider, broker, lastAuthOK)
-		}
+	p := &poller{
+		client: client, provider: provider, st: st, broker: broker, handlers: handlers,
+		interval: interval, backoff: interval, lastAuthOK: true,
 	}
 
-	doFetch()
+	p.fetch(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
-			doFetch()
+		case <-time.After(p.backoff):
+			p.fetch(ctx)
 		}
 	}
+}
+
+type poller struct {
+	client      *api.Client
+	provider    *auth.Provider
+	st          *store.Store
+	broker      *server.SSEBroker
+	handlers    *server.Handlers
+	interval    time.Duration
+	backoff     time.Duration
+	lastAuthOK  bool
+	authWaiting bool
+}
+
+const authWaitBackoff = 30 * time.Second
+
+// enterAuthWait flips the poller into the "waiting for credentials" state.
+// Idempotent: repeated calls don't relog.
+func (p *poller) enterAuthWait() {
+	if !p.authWaiting {
+		log.Printf("[poll] Auth expired, waiting for credentials to refresh (checking every 30s)")
+		p.handlers.SetPollError("auth expired — waiting for credentials to refresh")
+		p.authWaiting = true
+	}
+	p.backoff = authWaitBackoff
+}
+
+// authOK reports whether the provider currently holds a usable token.
+func (p *poller) authOK() bool {
+	status, _ := p.provider.Status()
+	return status == auth.AuthOK
+}
+
+func (p *poller) fetch(ctx context.Context) {
+	// When auth is expired, don't hit the API — just try reloading credentials
+	if !p.authOK() {
+		if err := p.provider.Reload(); err != nil || !p.authOK() {
+			p.enterAuthWait()
+			p.lastAuthOK = broadcastAuthStatus(p.provider, p.broker, p.lastAuthOK)
+			return
+		}
+		log.Printf("[poll] Auth recovered, resuming API polling")
+		p.authWaiting = false
+	}
+
+	err := fetchAndBroadcastUsage(ctx, p.client, p.st, p.broker, p.handlers)
+	p.lastAuthOK = broadcastAuthStatus(p.provider, p.broker, p.lastAuthOK)
+	if err == nil {
+		p.backoff = p.interval
+		p.authWaiting = false
+		return
+	}
+
+	var authErr *api.AuthError
+	if errors.As(err, &authErr) {
+		p.enterAuthWait()
+		return
+	}
+	p.handlers.SetPollError(err.Error())
+	p.backoff = retryBackoff(err, min(p.backoff*2, 10*time.Minute))
+	log.Printf("[poll] Backing off to %v", p.backoff)
 }
 
 func broadcastAuthStatus(provider *auth.Provider, broker *server.SSEBroker, lastAuthOK bool) bool {
@@ -330,9 +348,7 @@ func broadcastAuthStatus(provider *auth.Provider, broker *server.SSEBroker, last
 		}
 	}
 	if !isOK || isOK != lastAuthOK {
-		evt := map[string]string{"status": status, "message": msg}
-		data, _ := json.Marshal(evt)
-		broker.Send(server.SSEEvent{Event: "auth_status", Data: string(data)})
+		broker.SendJSON("auth_status", map[string]string{"status": status, "message": msg})
 	}
 
 	return isOK
@@ -362,8 +378,7 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 
 	// Broadcast to SSE clients
 	evt := buildUsageEvent(usage)
-	data, _ := json.Marshal(evt)
-	broker.Send(server.SSEEvent{Event: "usage", Data: string(data)})
+	broker.SendJSON("usage", evt)
 	handlers.SetLatestUsage(evt)
 	log.Printf("[poll] Usage: session=%.1f%% weekly=%.1f%%", usage.SessionPercent, usage.WeeklyPercent)
 	return nil
@@ -434,7 +449,7 @@ func updateDailyAggregate(claudeDir string, st *store.Store) {
 }
 
 func backfillHistory(claudeDir string, st *store.Store) {
-	log.Println("[backfill] Scanning all sessions for historical data...")
+	log.Printf("[backfill] Scanning all sessions for historical data...")
 
 	sessions, err := parser.DiscoverSessions(claudeDir)
 	if err != nil {

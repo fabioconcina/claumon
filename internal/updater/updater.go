@@ -115,7 +115,10 @@ func Update(rel *Release) (string, error) {
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("writing binary: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("closing temp file: %w", err)
+	}
 
 	if err := verifyChecksum(rel, asset, tmpPath); err != nil {
 		os.Remove(tmpPath)
@@ -228,8 +231,9 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }

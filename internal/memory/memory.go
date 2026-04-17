@@ -108,14 +108,7 @@ func DiscoverAll(claudeDir string) ([]*MemoryFile, error) {
 	}
 
 	// 2. Global rules
-	globalRules := filepath.Join(claudeDir, "rules")
-	if entries, err := filepath.Glob(filepath.Join(globalRules, "*.md")); err == nil {
-		for _, e := range entries {
-			if mf := readMemoryFile(e, "", "rules"); mf != nil {
-				files = append(files, mf)
-			}
-		}
-	}
+	files = append(files, globMarkdownFiles(filepath.Join(claudeDir, "rules"), "", "rules")...)
 
 	// 3. Per-project memories
 	projectsDir := filepath.Join(claudeDir, "projects")
@@ -130,46 +123,59 @@ func DiscoverAll(claudeDir string) ([]*MemoryFile, error) {
 		}
 		projName := DecodePath(projEntry.Name())
 		projDir := filepath.Join(projectsDir, projEntry.Name())
+		files = append(files, discoverProjectMemories(projDir, projName)...)
+	}
 
-		// Auto-memory: MEMORY.md
-		memoryDir := filepath.Join(projDir, "memory")
-		if mf := readMemoryFile(filepath.Join(memoryDir, "MEMORY.md"), projName, "auto-memory"); mf != nil {
-			files = append(files, mf)
+	return files, nil
+}
+
+// globMarkdownFiles reads every *.md file in dir as a memory of the given category/project.
+// Missing directories return nil, not an error.
+func globMarkdownFiles(dir, project, category string) []*MemoryFile {
+	entries, err := filepath.Glob(filepath.Join(dir, "*.md"))
+	if err != nil {
+		return nil
+	}
+	var out []*MemoryFile
+	for _, e := range entries {
+		if mf := readMemoryFile(e, project, category); mf != nil {
+			out = append(out, mf)
 		}
+	}
+	return out
+}
 
-		// Individual memory files in memory/
-		if entries, err := os.ReadDir(memoryDir); err == nil {
-			for _, e := range entries {
-				if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || e.Name() == "MEMORY.md" {
-					continue
-				}
-				if mf := readMemoryFile(filepath.Join(memoryDir, e.Name()), projName, "memory-file"); mf != nil {
-					files = append(files, mf)
-				}
+// discoverProjectMemories collects all memory sources for a single project:
+// auto-memory MEMORY.md, individual memory files, project CLAUDE.md, and project rules.
+func discoverProjectMemories(projDir, projName string) []*MemoryFile {
+	var out []*MemoryFile
+
+	memoryDir := filepath.Join(projDir, "memory")
+	if mf := readMemoryFile(filepath.Join(memoryDir, "MEMORY.md"), projName, "auto-memory"); mf != nil {
+		out = append(out, mf)
+	}
+
+	if entries, err := os.ReadDir(memoryDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || e.Name() == "MEMORY.md" {
+				continue
 			}
-		}
-
-		// Project CLAUDE.md (in actual project directory)
-		for _, rel := range []string{"CLAUDE.md", ".claude/CLAUDE.md"} {
-			p := filepath.Join(projName, rel)
-			if mf := readMemoryFile(p, projName, "claude-md"); mf != nil {
-				files = append(files, mf)
-				break
-			}
-		}
-
-		// Project rules
-		projRulesDir := filepath.Join(projName, ".claude", "rules")
-		if entries, err := filepath.Glob(filepath.Join(projRulesDir, "*.md")); err == nil {
-			for _, e := range entries {
-				if mf := readMemoryFile(e, projName, "rules"); mf != nil {
-					files = append(files, mf)
-				}
+			if mf := readMemoryFile(filepath.Join(memoryDir, e.Name()), projName, "memory-file"); mf != nil {
+				out = append(out, mf)
 			}
 		}
 	}
 
-	return files, nil
+	// Project CLAUDE.md (in actual project directory, first match wins)
+	for _, rel := range []string{"CLAUDE.md", ".claude/CLAUDE.md"} {
+		if mf := readMemoryFile(filepath.Join(projName, rel), projName, "claude-md"); mf != nil {
+			out = append(out, mf)
+			break
+		}
+	}
+
+	out = append(out, globMarkdownFiles(filepath.Join(projName, ".claude", "rules"), projName, "rules")...)
+	return out
 }
 
 func readMemoryFile(path, project, category string) *MemoryFile {

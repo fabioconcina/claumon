@@ -51,7 +51,8 @@ func (h *Handlers) RefreshMemories() {
 	files, err := memory.DiscoverAll(h.claudeDir)
 	if err != nil {
 		log.Printf("[memory] Failed to discover memories: %v", err)
-		return
+		// Fall through with an empty slice so the cache still has non-nil reports.
+		files = nil
 	}
 	mc := memoryCache{
 		files:         files,
@@ -211,8 +212,7 @@ func (h *Handlers) HandleKillProcess(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {
-	mc := h.getMemories()
-	files := mc.files
+	files := h.getMemories().files
 	if files == nil {
 		files = []*memory.MemoryFile{}
 	}
@@ -220,45 +220,19 @@ func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleMemoriesStaleness(w http.ResponseWriter, r *http.Request) {
-	mc := h.getMemories()
-	if mc.staleness == nil {
-		writeJSON(w, &memory.StalenessReport{Alerts: []memory.StalenessAlert{}, CheckedAt: 0})
-		return
-	}
-	writeJSON(w, mc.staleness)
+	writeJSON(w, h.getMemories().staleness)
 }
 
 func (h *Handlers) HandleMemoriesGraph(w http.ResponseWriter, r *http.Request) {
-	mc := h.getMemories()
-	if mc.graph == nil {
-		writeJSON(w, &memory.GraphData{
-			Nodes: []memory.GraphNode{}, Edges: []memory.GraphEdge{}, Groups: []memory.GraphGroup{},
-		})
-		return
-	}
-	writeJSON(w, mc.graph)
+	writeJSON(w, h.getMemories().graph)
 }
 
 func (h *Handlers) HandleMemoriesConsolidation(w http.ResponseWriter, r *http.Request) {
-	mc := h.getMemories()
-	if mc.consolidation == nil {
-		writeJSON(w, &memory.ConsolidationReport{Groups: []memory.ConsolidationGroup{}, CheckedAt: 0})
-		return
-	}
-	writeJSON(w, mc.consolidation)
+	writeJSON(w, h.getMemories().consolidation)
 }
 
 func (h *Handlers) HandleMemoriesHealth(w http.ResponseWriter, r *http.Request) {
-	mc := h.getMemories()
-	if mc.health == nil {
-		writeJSON(w, &memory.HealthReport{
-			Scores:     []memory.HealthScore{},
-			GradeCount: map[string]int{},
-			CheckedAt:  0,
-		})
-		return
-	}
-	writeJSON(w, mc.health)
+	writeJSON(w, h.getMemories().health)
 }
 
 func (h *Handlers) HandleMemoriesSearch(w http.ResponseWriter, r *http.Request) {
@@ -320,15 +294,18 @@ func (h *Handlers) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": status, "message": msg})
 }
 
-func writeJSON(w http.ResponseWriter, data interface{}) {
+func setJSONHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+}
+
+func writeJSON(w http.ResponseWriter, data interface{}) {
+	setJSONHeaders(w)
 	json.NewEncoder(w).Encode(data)
 }
 
 func writeJSONError(w http.ResponseWriter, msg string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setJSONHeaders(w)
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

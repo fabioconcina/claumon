@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -91,6 +92,17 @@ func (b *SSEBroker) Send(event SSEEvent) {
 	default:
 		log.Printf("[sse] broadcast channel full, dropping event: %s", event.Event)
 	}
+}
+
+// SendJSON marshals payload and broadcasts it as an SSE event. Marshal failures
+// are logged — callers broadcasting transient updates can't recover meaningfully.
+func (b *SSEBroker) SendJSON(event string, payload interface{}) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[sse] marshal %s event: %v", event, err)
+		return
+	}
+	b.Send(SSEEvent{Event: event, Data: string(data)})
 }
 
 func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
