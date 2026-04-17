@@ -20,6 +20,7 @@ func TestNormalizeModel(t *testing.T) {
 		input string
 		want  string
 	}{
+		{"claude-opus-4-7", "claude-opus-4-7"},
 		{"claude-opus-4-6", "claude-opus-4-6"},
 		{"claude-opus-4-6-20250514", "claude-opus-4-6"},
 		{"claude-sonnet-4-6", "claude-sonnet-4-6"},
@@ -30,7 +31,7 @@ func TestNormalizeModel(t *testing.T) {
 		{"claude-haiku-4-5-20251001", "claude-haiku-4-5"},
 		{"claude-haiku-3-5", "claude-haiku-3-5"},
 		// Family-based fallback
-		{"some-opus-model", "claude-opus-4-6"},
+		{"some-opus-model", "claude-opus-4-7"},
 		{"some-haiku-model", "claude-haiku-4-5"},
 		{"unknown-model", "claude-sonnet-4-6"},
 		{"", "claude-sonnet-4-6"},

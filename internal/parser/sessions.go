@@ -217,7 +217,7 @@ func normalizeModel(model string) string {
 	// Try matching by family — pick the latest known model in each family
 	switch {
 	case strings.Contains(model, "opus"):
-		return "claude-opus-4-6"
+		return "claude-opus-4-7"
 	case strings.Contains(model, "haiku"):
 		return "claude-haiku-4-5"
 	default:
