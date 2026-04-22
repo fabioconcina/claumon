@@ -338,11 +338,49 @@ func TestParseSessionDetail(t *testing.T) {
 	if msgs[1].Role != "assistant" || msgs[1].Text != "4" {
 		t.Errorf("msg[1] text = %q, want %q", msgs[1].Text, "4")
 	}
-	if msgs[1].ToolUse != "Calculator" {
-		t.Errorf("msg[1] tool_use = %q, want %q", msgs[1].ToolUse, "Calculator")
+	if len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].Name != "Calculator" {
+		t.Errorf("msg[1] tool_calls = %+v, want one Calculator call", msgs[1].ToolCalls)
 	}
 	if msgs[1].TokensIn != 10 || msgs[1].TokensOut != 5 {
 		t.Errorf("msg[1] tokens = in:%d out:%d, want in:10 out:5", msgs[1].TokensIn, msgs[1].TokensOut)
+	}
+}
+
+func TestParseSessionDetailToolResultPairing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pairing-test.jsonl")
+
+	// Assistant fires two tool_use calls; the following user message
+	// carries their tool_result blocks (one ok, one error). The user
+	// entry should not appear as its own message — the results attach
+	// to the matching calls instead.
+	content := `{"type":"user","timestamp":"2026-03-20T10:00:00Z","message":{"role":"user","content":"go"}}
+{"type":"assistant","timestamp":"2026-03-20T10:00:01Z","message":{"model":"claude-sonnet-4-6","role":"assistant","content":[{"type":"tool_use","id":"call_a","name":"Read","input":{"file_path":"/tmp/a.txt"}},{"type":"tool_use","id":"call_b","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"user","timestamp":"2026-03-20T10:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_a","content":"file contents"},{"type":"tool_result","tool_use_id":"call_b","content":[{"type":"text","text":"boom"}],"is_error":true}]}}
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := ParseSessionDetail(path)
+	if err != nil {
+		t.Fatalf("ParseSessionDetail() error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2 (the tool_result-only user entry should be dropped)", len(msgs))
+	}
+	calls := msgs[1].ToolCalls
+	if len(calls) != 2 {
+		t.Fatalf("got %d tool calls, want 2", len(calls))
+	}
+	if calls[0].ID != "call_a" || calls[0].Name != "Read" || calls[0].Result != "file contents" || calls[0].IsError {
+		t.Errorf("call[0] = %+v, want Read/call_a with result 'file contents'", calls[0])
+	}
+	if calls[1].ID != "call_b" || calls[1].Name != "Bash" || calls[1].Result != "boom" || !calls[1].IsError {
+		t.Errorf("call[1] = %+v, want Bash/call_b with error result 'boom'", calls[1])
+	}
+	if len(calls[0].Input) == 0 {
+		t.Error("call[0].Input should carry the raw input JSON")
 	}
 }
 

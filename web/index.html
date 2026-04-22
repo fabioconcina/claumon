@@ -273,8 +273,74 @@ tr.clickable { cursor: pointer; }
 .msg-role.user { color: var(--green); }
 .msg-role.assistant { color: var(--accent); }
 .msg-tokens { color: var(--text-dim); }
-.msg-tools { font-size: 11px; color: var(--purple); margin-bottom: 4px; }
 .msg-text { white-space: pre-wrap; word-break: break-word; }
+.tool-calls { margin: 4px 0 6px; display: flex; flex-direction: column; gap: 4px; }
+.tool-call {
+  border-left: 2px solid var(--purple);
+  background: rgba(0,0,0,0.15);
+  padding: 4px 8px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+.tool-call.error { border-left-color: var(--red); }
+.tool-call > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.tool-call > summary::-webkit-details-marker { display: none; }
+.tool-call .tool-name { color: var(--purple); font-weight: 600; }
+.tool-call.error .tool-name { color: var(--red); }
+.tool-call .tool-preview {
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.tool-call pre {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: rgba(0,0,0,0.25);
+  padding: 6px 8px;
+  margin: 6px 0 0;
+  border-radius: 2px;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-call .tool-result-label { font-size: 10px; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.msg-thinking {
+  border-left: 2px solid var(--text-dim);
+  background: rgba(0,0,0,0.1);
+  padding: 4px 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  margin: 4px 0;
+  font-style: italic;
+}
+.msg-thinking > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-style: normal;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.msg-thinking > summary::-webkit-details-marker { display: none; }
+.msg-thinking .thinking-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 6px;
+  color: var(--text-dim);
+}
 .backdrop {
   display: none;
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -983,6 +1049,38 @@ function escHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+function toolPreview(input) {
+  if (!input || typeof input !== 'object') return '';
+  const keys = ['file_path', 'command', 'pattern', 'path', 'url', 'description', 'prompt', 'query'];
+  for (const k of keys) {
+    const v = input[k];
+    if (typeof v === 'string' && v.trim()) {
+      const oneLine = v.replace(/\s+/g, ' ').trim();
+      return oneLine.length > 120 ? oneLine.slice(0, 120) + '…' : oneLine;
+    }
+  }
+  return '';
+}
+
+function renderToolCalls(calls) {
+  if (!calls || !calls.length) return '';
+  const items = calls.map(c => {
+    const preview = toolPreview(c.input) || '—';
+    const inputJson = c.input != null ? JSON.stringify(c.input, null, 2) : '';
+    let body = '';
+    if (inputJson) body += `<pre>${escHtml(inputJson)}</pre>`;
+    if (c.result) {
+      body += `<div class="tool-result-label">${c.is_error ? 'Error' : 'Result'}</div>`;
+      body += `<pre>${escHtml(c.result)}</pre>`;
+    }
+    return `<details class="tool-call${c.is_error ? ' error' : ''}">
+      <summary><span class="tool-name">${escHtml(c.name)}</span><span class="tool-preview">${escHtml(preview)}</span></summary>
+      ${body}
+    </details>`;
+  }).join('');
+  return `<div class="tool-calls">${items}</div>`;
+}
 function escJsAttr(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
@@ -1412,9 +1510,11 @@ function openSessionDetail(sessionId) {
           tokensInfo = `ctx: ${fmtNum(ctx)} out: ${fmtNum(m.tokens_out)}`;
         }
 
-        let toolsHtml = '';
-        if (m.tool_use) {
-          toolsHtml = `<div class="msg-tools">Tools: ${escHtml(m.tool_use)}</div>`;
+        const toolsHtml = renderToolCalls(m.tool_calls);
+        let thinkingHtml = '';
+        if (m.thinking) {
+          const t = m.thinking.length > 4000 ? m.thinking.slice(0, 4000) + '\n\n… (truncated)' : m.thinking;
+          thinkingHtml = `<details class="msg-thinking"><summary>Thinking</summary><div class="thinking-body">${escHtml(t)}</div></details>`;
         }
 
         const text = m.text || '';
@@ -1426,6 +1526,7 @@ function openSessionDetail(sessionId) {
               <span class="msg-role ${m.role}">${m.role}</span>
               <span class="msg-tokens">${fmtTime(m.timestamp)} ${tokensInfo ? '| ' + tokensInfo : ''}</span>
             </div>
+            ${thinkingHtml}
             ${toolsHtml}
             <div class="msg-text">${escHtml(displayText)}</div>
           </div>

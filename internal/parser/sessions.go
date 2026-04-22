@@ -60,7 +60,18 @@ type SessionMessage struct {
 	TokensOut int       `json:"tokens_out,omitempty"`
 	CacheRead   int       `json:"cache_read,omitempty"`
 	CacheCreate int       `json:"cache_create,omitempty"`
-	ToolUse     string    `json:"tool_use,omitempty"`
+	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
+	Thinking    string    `json:"thinking,omitempty"`
+}
+
+// ToolCall represents a single tool_use invocation from an assistant message,
+// optionally paired with its matching tool_result from the following user message.
+type ToolCall struct {
+	ID      string          `json:"id,omitempty"`
+	Name    string          `json:"name"`
+	Input   json.RawMessage `json:"input,omitempty"`
+	Result  string          `json:"result,omitempty"`
+	IsError bool            `json:"is_error,omitempty"`
 }
 
 type jsonlLine struct {
@@ -343,13 +354,34 @@ func ParseSessionDetail(path string) ([]SessionMessage, error) {
 
 		switch entry.Type {
 		case "user":
+			if entry.Message == nil {
+				continue
+			}
+			// Attach tool_results to the matching tool_use on the most
+			// recent preceding assistant message, and drop this user entry
+			// if it only carried tool_results (no user-visible text).
+			if results := extractToolResults(entry.Message.Content); len(results) > 0 {
+				for i := len(messages) - 1; i >= 0; i-- {
+					if messages[i].Role != "assistant" {
+						continue
+					}
+					for j := range messages[i].ToolCalls {
+						if r, ok := results[messages[i].ToolCalls[j].ID]; ok {
+							messages[i].ToolCalls[j].Result = r.Text
+							messages[i].ToolCalls[j].IsError = r.IsError
+						}
+					}
+					break
+				}
+			}
+			if hasOnlyToolResults(entry.Message.Content) {
+				continue
+			}
 			msg := SessionMessage{
 				Type:      "user",
 				Timestamp: entry.Timestamp,
 				Role:      "user",
-			}
-			if entry.Message != nil {
-				msg.Text = extractText(entry.Message.Content)
+				Text:      extractText(entry.Message.Content),
 			}
 			if msg.Text != "" {
 				messages = append(messages, msg)
@@ -372,7 +404,14 @@ func ParseSessionDetail(path string) ([]SessionMessage, error) {
 				msg.CacheCreate = entry.Message.Usage.CacheCreationInputTokens
 			}
 			msg.Text = extractText(entry.Message.Content)
-			msg.ToolUse = extractToolUse(entry.Message.Content)
+			msg.ToolCalls = extractToolCalls(entry.Message.Content)
+			msg.Thinking = extractThinking(entry.Message.Content)
+			// Skip empty assistant messages (e.g. thinking-only with no
+			// visible content — Claude Code persists only the signature,
+			// not the thinking text).
+			if msg.Text == "" && len(msg.ToolCalls) == 0 && msg.Thinking == "" {
+				continue
+			}
 			messages = append(messages, msg)
 		}
 	}
@@ -434,9 +473,15 @@ func AggregateSessions(sessions []*SessionSummary) SessionAggregate {
 
 // contentBlock represents a single block in a Claude message content array.
 type contentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	Name string `json:"name,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Thinking  string          `json:"thinking,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
 }
 
 // parseContentBlocks parses message content as either a string or array of blocks.
@@ -471,15 +516,105 @@ func extractText(content json.RawMessage) string {
 	return strings.Join(parts, "\n")
 }
 
-func extractToolUse(content json.RawMessage) string {
+func extractThinking(content json.RawMessage) string {
 	blocks := parseContentBlocks(content)
-	var tools []string
+	var parts []string
 	for _, b := range blocks {
-		if b.Type == "tool_use" && b.Name != "" {
-			tools = append(tools, b.Name)
+		if b.Type == "thinking" && b.Thinking != "" {
+			parts = append(parts, b.Thinking)
 		}
 	}
-	return strings.Join(tools, ", ")
+	return strings.Join(parts, "\n")
+}
+
+func extractToolCalls(content json.RawMessage) []ToolCall {
+	blocks := parseContentBlocks(content)
+	var calls []ToolCall
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.Name != "" {
+			calls = append(calls, ToolCall{
+				ID:    b.ID,
+				Name:  b.Name,
+				Input: b.Input,
+			})
+		}
+	}
+	return calls
+}
+
+// toolResult is an intermediate struct used when pairing tool_result blocks
+// from user messages back to their originating tool_use calls.
+type toolResult struct {
+	Text    string
+	IsError bool
+}
+
+// extractToolResults returns tool_result blocks keyed by their tool_use_id.
+// Result content may be a plain string or an array of text blocks — both are
+// normalized to a single string and truncated to avoid bloating the API payload.
+func extractToolResults(content json.RawMessage) map[string]toolResult {
+	blocks := parseContentBlocks(content)
+	if len(blocks) == 0 {
+		return nil
+	}
+	out := map[string]toolResult{}
+	for _, b := range blocks {
+		if b.Type != "tool_result" || b.ToolUseID == "" {
+			continue
+		}
+		text := normalizeResultContent(b.Content)
+		if len(text) > 4096 {
+			text = text[:4096] + "\n\n… (truncated)"
+		}
+		out[b.ToolUseID] = toolResult{Text: text, IsError: b.IsError}
+	}
+	return out
+}
+
+// normalizeResultContent handles the two shapes tool_result.content can take:
+// a bare string, or an array of {type:"text", text:"..."} blocks.
+func normalizeResultContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var blocks []contentBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
+// hasOnlyToolResults reports whether a content payload contains tool_result
+// blocks and nothing else worth displaying as a user message bubble.
+func hasOnlyToolResults(content json.RawMessage) bool {
+	blocks := parseContentBlocks(content)
+	if len(blocks) == 0 {
+		return false
+	}
+	sawToolResult := false
+	for _, b := range blocks {
+		switch b.Type {
+		case "tool_result":
+			sawToolResult = true
+		case "text":
+			if strings.TrimSpace(b.Text) != "" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return sawToolResult
 }
 
 var (
