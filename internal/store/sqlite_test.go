@@ -29,8 +29,9 @@ func TestOpenAndClose(t *testing.T) {
 func TestUpsertAndGetHistory(t *testing.T) {
 	st := openTestStore(t)
 
+	today := time.Now().Format("2006-01-02")
 	agg := DailyAggregate{
-		Date:         "2026-03-20",
+		Date:         today,
 		InputTokens:  1000,
 		OutputTokens: 500,
 		CostUSD:      0.05,
@@ -59,8 +60,9 @@ func TestUpsertAndGetHistory(t *testing.T) {
 func TestUpsertOverwrites(t *testing.T) {
 	st := openTestStore(t)
 
-	st.UpsertDailyAggregate(DailyAggregate{Date: "2026-03-20", InputTokens: 100})
-	st.UpsertDailyAggregate(DailyAggregate{Date: "2026-03-20", InputTokens: 999})
+	today := time.Now().Format("2006-01-02")
+	st.UpsertDailyAggregate(DailyAggregate{Date: today, InputTokens: 100})
+	st.UpsertDailyAggregate(DailyAggregate{Date: today, InputTokens: 999})
 
 	history, _ := st.GetHistory(30)
 	if len(history) != 1 {
