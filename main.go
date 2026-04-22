@@ -399,6 +399,10 @@ func buildUsageEvent(usage *api.UsageResponse) map[string]interface{} {
 		evt["weekly_opus_pct"] = *usage.WeeklyOpusPct
 		evt["weekly_opus_reset"] = formatDuration(api.ParseResetDuration(usage.WeeklyOpusReset))
 	}
+	if usage.WeeklyDesignPct != nil {
+		evt["weekly_design_pct"] = *usage.WeeklyDesignPct
+		evt["weekly_design_reset"] = formatDuration(api.ParseResetDuration(usage.WeeklyDesignReset))
+	}
 	if usage.ExtraUsageEnabled {
 		evt["extra_usage_enabled"] = true
 		if usage.ExtraUsageLimit != nil {

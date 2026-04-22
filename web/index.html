@@ -790,6 +790,20 @@ tr.clickable { cursor: pointer; }
           <div class="reset" id="sonnet-reset"></div>
         </div>
       </div>
+      <div class="gauge-card" id="gauge-design-card" style="display:none">
+        <svg class="gauge-svg" viewBox="0 0 100 100">
+          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
+          <circle class="gauge-circle-fg" id="gauge-design-fg" cx="50" cy="50" r="40"
+            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
+            transform="rotate(-90 50 50)"/>
+          <text class="gauge-text" x="50" y="50" id="gauge-design-text">—</text>
+        </svg>
+        <div class="gauge-info">
+          <h3>Weekly Design</h3>
+          <div class="pct" id="design-pct">—</div>
+          <div class="reset" id="design-reset"></div>
+        </div>
+      </div>
     </div>
 
     <div class="summary-cards" id="summary-cards">
@@ -1045,6 +1059,15 @@ function updateUsageGauges(data) {
     updateGauge('sonnet', data.weekly_sonnet_pct, data.weekly_sonnet_reset || '');
   } else {
     sonnetCard.style.display = 'none';
+  }
+
+  // Design gauge (Claude Design)
+  const designCard = document.getElementById('gauge-design-card');
+  if (data.weekly_design_pct > 0) {
+    designCard.style.display = 'flex';
+    updateGauge('design', data.weekly_design_pct, data.weekly_design_reset || '');
+  } else {
+    designCard.style.display = 'none';
   }
 }
 

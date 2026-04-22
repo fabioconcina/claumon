@@ -23,6 +23,8 @@ type UsageResponse struct {
 	WeeklySonnetReset string
 	WeeklyOpusPct     *float64
 	WeeklyOpusReset   string
+	WeeklyDesignPct   *float64
+	WeeklyDesignReset string
 	ExtraUsageEnabled bool
 	ExtraUsageLimit   *float64
 	ExtraUsageUsed    *float64
@@ -46,6 +48,10 @@ type rawUsageResponse struct {
 		Utilization float64 `json:"utilization"`
 		ResetsAt    *string `json:"resets_at"`
 	} `json:"seven_day_opus"`
+	SevenDayDesign *struct {
+		Utilization float64 `json:"utilization"`
+		ResetsAt    *string `json:"resets_at"`
+	} `json:"seven_day_omelette"`
 	ExtraUsage *struct {
 		IsEnabled    bool     `json:"is_enabled"`
 		MonthlyLimit *float64 `json:"monthly_limit"`
@@ -198,6 +204,13 @@ func mapUsageResponse(raw rawUsageResponse, body []byte) *UsageResponse {
 		usage.WeeklyOpusPct = &v
 		if raw.SevenDayOpus.ResetsAt != nil {
 			usage.WeeklyOpusReset = *raw.SevenDayOpus.ResetsAt
+		}
+	}
+	if raw.SevenDayDesign != nil {
+		v := raw.SevenDayDesign.Utilization
+		usage.WeeklyDesignPct = &v
+		if raw.SevenDayDesign.ResetsAt != nil {
+			usage.WeeklyDesignReset = *raw.SevenDayDesign.ResetsAt
 		}
 	}
 	if raw.ExtraUsage != nil {
