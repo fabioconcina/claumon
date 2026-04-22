@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fabioconcina/claumon/internal/memory"
@@ -119,7 +118,7 @@ func EnrichSessionsWithProcessStatus(sessions []*SessionSummary, claudeDir strin
 	}
 }
 
-// KillSession sends SIGINT to the process running a given session.
+// KillSession sends an interrupt to the process running a given session.
 func KillSession(claudeDir, sessionID string) error {
 	procMap := BuildProcessMap(claudeDir)
 	ps, ok := procMap[sessionID]
@@ -127,37 +126,19 @@ func KillSession(claudeDir, sessionID string) error {
 		return fmt.Errorf("session %s is not running", sessionID)
 	}
 
-	log.Printf("[process] Sending SIGINT to PID %d (session %s)", ps.PID, sessionID)
-	proc, err := os.FindProcess(ps.PID)
-	if err != nil {
-		return fmt.Errorf("finding process %d: %w", ps.PID, err)
-	}
-	return proc.Signal(syscall.SIGINT)
+	log.Printf("[process] Interrupting PID %d (session %s)", ps.PID, sessionID)
+	return interruptProcess(ps.PID)
 }
 
-// KillProcess sends SIGINT to a Claude Code process by PID.
+// KillProcess sends an interrupt to a Claude Code process by PID.
 // It verifies the PID belongs to a known Claude session before killing.
 func KillProcess(claudeDir string, pid int) error {
 	pids := DiscoverPIDFiles(claudeDir)
 	for _, p := range pids {
 		if p.PID == pid {
-			log.Printf("[process] Sending SIGINT to PID %d (session %s)", pid, p.SessionID)
-			proc, err := os.FindProcess(pid)
-			if err != nil {
-				return fmt.Errorf("finding process %d: %w", pid, err)
-			}
-			return proc.Signal(syscall.SIGINT)
+			log.Printf("[process] Interrupting PID %d (session %s)", pid, p.SessionID)
+			return interruptProcess(pid)
 		}
 	}
 	return fmt.Errorf("PID %d is not a known Claude process", pid)
-}
-
-// isProcessRunning checks if a process with the given PID exists.
-func isProcessRunning(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal 0 checks process existence without actually sending a signal.
-	return proc.Signal(syscall.Signal(0)) == nil
 }
