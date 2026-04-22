@@ -274,6 +274,23 @@ tr.clickable { cursor: pointer; }
 .msg-role.assistant { color: var(--accent); }
 .msg-tokens { color: var(--text-dim); }
 .msg-text { white-space: pre-wrap; word-break: break-word; }
+.day-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.day-separator::before,
+.day-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border, rgba(255,255,255,0.08));
+}
 .tool-calls { margin: 4px 0 6px; display: flex; flex-direction: column; gap: 4px; }
 .tool-call {
   border-left: 2px solid var(--purple);
@@ -1037,7 +1054,23 @@ function fmtTimeAgo(ts) {
   return d.toLocaleDateString();
 }
 function fmtTime(ts) {
-  return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const now = new Date();
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    return time;
+  }
+  return d.toLocaleDateString([], {month:'short', day:'numeric'}) + ' ' + time;
+}
+function fmtDaySeparator(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today - msgDay) / 86400000);
+  if (diffDays === 0) return 'Today — ' + d.toLocaleDateString();
+  if (diffDays === 1) return 'Yesterday — ' + d.toLocaleDateString();
+  return d.toLocaleDateString([], {weekday:'short', year:'numeric', month:'short', day:'numeric'});
 }
 function gaugeColor(pct) {
   if (pct < 50) return 'var(--green)';
@@ -1502,7 +1535,14 @@ function openSessionDetail(sessionId) {
         return;
       }
 
+      let lastDay = '';
       body.innerHTML = messages.map(m => {
+        const day = new Date(m.timestamp).toDateString();
+        let daySep = '';
+        if (day !== lastDay) {
+          daySep = `<div class="day-separator"><span>${escHtml(fmtDaySeparator(m.timestamp))}</span></div>`;
+          lastDay = day;
+        }
         const isUser = m.role === 'user';
         let tokensInfo = '';
         if (m.tokens_in || m.tokens_out || m.cache_read || m.cache_create) {
@@ -1521,6 +1561,7 @@ function openSessionDetail(sessionId) {
         const displayText = text.length > 2000 ? text.substring(0, 2000) + '\n\n... (truncated)' : text;
 
         return `
+          ${daySep}
           <div class="msg ${isUser ? 'msg-user' : 'msg-assistant'}">
             <div class="msg-header">
               <span class="msg-role ${m.role}">${m.role}</span>
