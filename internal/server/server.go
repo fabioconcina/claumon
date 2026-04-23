@@ -24,6 +24,7 @@ func New(claudeDir string, st *store.Store, webFS fs.FS) *Server {
 	mux.HandleFunc("GET /api/auth/status", handlers.HandleAuthStatus)
 	mux.HandleFunc("GET /api/usage", handlers.HandleUsage)
 	mux.HandleFunc("GET /api/today", handlers.HandleToday)
+	mux.HandleFunc("GET /api/heatmap", handlers.HandleHeatmap)
 	mux.HandleFunc("GET /api/history", handlers.HandleHistory)
 	mux.HandleFunc("GET /api/sessions", handlers.HandleSessions)
 	mux.HandleFunc("GET /api/memories", handlers.HandleMemories)

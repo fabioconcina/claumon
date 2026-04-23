@@ -193,25 +193,28 @@ func SetPricingTable(t *pricing.Table) {
 }
 
 func estimateCost(s *SessionSummary) float64 {
+	cost := costFor(s.Model, s.InputTokens, s.OutputTokens, s.CacheReadTokens, s.CacheCreateTokens)
+	return math.Round(cost*10000) / 10000
+}
+
+// costFor returns the unrounded USD cost for the given token mix under the
+// given model's pricing. Returns 0 if pricing is unavailable.
+func costFor(model string, in, out, cacheRead, cacheCreate int) float64 {
 	if pricingTable == nil {
 		return 0
 	}
-
-	model := normalizeModel(s.Model)
-	p, ok := pricingTable.Get(model)
+	norm := normalizeModel(model)
+	p, ok := pricingTable.Get(norm)
 	if !ok {
-		if _, warned := warnedModels.LoadOrStore(s.Model, true); !warned {
-			log.Printf("[pricing] Unknown model %q — using sonnet pricing. Update pricing.json?", s.Model)
+		if _, warned := warnedModels.LoadOrStore(model, true); !warned {
+			log.Printf("[pricing] Unknown model %q — using sonnet pricing. Update pricing.json?", model)
 		}
 		p, _ = pricingTable.Get("claude-sonnet-4-6")
 	}
-
-	cost := float64(s.InputTokens)/1e6*p.Input +
-		float64(s.OutputTokens)/1e6*p.Output +
-		float64(s.CacheReadTokens)/1e6*p.CacheRead +
-		float64(s.CacheCreateTokens)/1e6*p.CacheWrite5m
-
-	return math.Round(cost*10000) / 10000
+	return float64(in)/1e6*p.Input +
+		float64(out)/1e6*p.Output +
+		float64(cacheRead)/1e6*p.CacheRead +
+		float64(cacheCreate)/1e6*p.CacheWrite5m
 }
 
 func normalizeModel(model string) string {
@@ -439,6 +442,165 @@ func FindSessionFile(claudeDir, sessionID string) string {
 		}
 	}
 	return ""
+}
+
+// ParseSessionFileDaily parses a session JSONL and buckets each assistant
+// message's token usage by its own timestamp's local date. The returned map
+// is keyed by "YYYY-MM-DD". Both user and assistant messages contribute to
+// MessageCount on their own date. SessionCount is left at 0 (set by caller).
+func ParseSessionFileDaily(path string) (map[string]*SessionAggregate, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening session file: %w", err)
+	}
+	defer f.Close()
+
+	buckets := map[string]*SessionAggregate{}
+	getBucket := func(date string) *SessionAggregate {
+		b := buckets[date]
+		if b == nil {
+			b = &SessionAggregate{}
+			buckets[date] = b
+		}
+		return b
+	}
+
+	scanner := newSessionScanner(f)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var entry jsonlLine
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+		if entry.Timestamp.IsZero() {
+			continue
+		}
+		date := entry.Timestamp.Local().Format("2006-01-02")
+
+		switch entry.Type {
+		case "assistant":
+			if entry.Message == nil {
+				continue
+			}
+			b := getBucket(date)
+			b.MessageCount++
+			if u := entry.Message.Usage; u != nil {
+				b.InputTokens += u.InputTokens
+				b.OutputTokens += u.OutputTokens
+				b.CacheReadTokens += u.CacheReadInputTokens
+				b.CacheCreateTokens += u.CacheCreationInputTokens
+				b.CostUSD += costFor(entry.Message.Model,
+					u.InputTokens, u.OutputTokens,
+					u.CacheReadInputTokens, u.CacheCreationInputTokens)
+			}
+		case "user":
+			if entry.Message == nil {
+				continue
+			}
+			getBucket(date).MessageCount++
+		}
+	}
+
+	for date, b := range buckets {
+		b.CostUSD = math.Round(b.CostUSD*10000) / 10000
+		buckets[date] = b
+	}
+	return buckets, nil
+}
+
+// HourlyTokensToday returns a 24-element slice where index i holds the total
+// tokens (input + output + cache read + cache create) from assistant messages
+// whose timestamp fell in local hour i on the current local day. Messages from
+// other days are skipped, even if they belong to a session that was also
+// active today.
+func HourlyTokensToday(claudeDir string) ([24]int, error) {
+	var hours [24]int
+	files, err := enumerateSessionFiles(claudeDir)
+	if err != nil {
+		return hours, err
+	}
+	today := time.Now().Local().Format("2006-01-02")
+	for _, sf := range files {
+		f, err := os.Open(sf.path)
+		if err != nil {
+			continue
+		}
+		scanner := newSessionScanner(f)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			if len(line) == 0 {
+				continue
+			}
+			var entry jsonlLine
+			if err := json.Unmarshal(line, &entry); err != nil {
+				continue
+			}
+			if entry.Type != "assistant" || entry.Message == nil || entry.Message.Usage == nil {
+				continue
+			}
+			if entry.Timestamp.IsZero() {
+				continue
+			}
+			ts := entry.Timestamp.Local()
+			if ts.Format("2006-01-02") != today {
+				continue
+			}
+			u := entry.Message.Usage
+			hours[ts.Hour()] += u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+		}
+		f.Close()
+	}
+	return hours, nil
+}
+
+// DiscoverDailyAggregates walks all session files and returns aggregates
+// bucketed by message timestamp (local date). SessionCount on each entry is
+// the number of distinct session files that contributed any message on that
+// date.
+func DiscoverDailyAggregates(claudeDir string) (map[string]SessionAggregate, error) {
+	files, err := enumerateSessionFiles(claudeDir)
+	if err != nil {
+		return nil, err
+	}
+
+	type acc struct {
+		agg      SessionAggregate
+		sessions map[string]bool
+	}
+	perDay := map[string]*acc{}
+
+	for _, f := range files {
+		buckets, err := ParseSessionFileDaily(f.path)
+		if err != nil {
+			continue
+		}
+		sid := strings.TrimSuffix(filepath.Base(f.path), ".jsonl")
+		for date, b := range buckets {
+			a := perDay[date]
+			if a == nil {
+				a = &acc{sessions: map[string]bool{}}
+				perDay[date] = a
+			}
+			a.agg.InputTokens += b.InputTokens
+			a.agg.OutputTokens += b.OutputTokens
+			a.agg.CacheReadTokens += b.CacheReadTokens
+			a.agg.CacheCreateTokens += b.CacheCreateTokens
+			a.agg.CostUSD += b.CostUSD
+			a.agg.MessageCount += b.MessageCount
+			a.sessions[sid] = true
+		}
+	}
+
+	out := make(map[string]SessionAggregate, len(perDay))
+	for date, a := range perDay {
+		a.agg.SessionCount = len(a.sessions)
+		a.agg.CostUSD = math.Round(a.agg.CostUSD*10000) / 10000
+		out[date] = a.agg
+	}
+	return out, nil
 }
 
 // SessionAggregate holds aggregated token counts and cost across sessions.

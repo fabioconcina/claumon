@@ -1260,17 +1260,10 @@ function renderStackedBarChart(containerId, data) {
 }
 
 // --- Heatmap ---
-function renderHeatmap(sessions) {
+function renderHeatmap(hours) {
   const heatmap = document.getElementById('heatmap');
   const labels = document.getElementById('heatmap-labels');
-
-  const hours = new Array(24).fill(0);
-  sessions.forEach(s => {
-    if (s.last_activity) {
-      const h = new Date(s.last_activity).getHours();
-      hours[h] += s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_create_tokens;
-    }
-  });
+  if (!Array.isArray(hours) || hours.length !== 24) hours = new Array(24).fill(0);
 
   const maxH = Math.max(...hours, 1);
   heatmap.innerHTML = hours.map((v, i) => {
@@ -1483,8 +1476,12 @@ function fetchSessions() {
   fetch(url).then(r => r.json()).then(data => {
     sessionsData = data;
     renderSessions(data);
-    if (sessionRange === 'today') renderHeatmap(data);
+    if (sessionRange === 'today') fetchHeatmap();
   }).catch(() => {});
+}
+
+function fetchHeatmap() {
+  fetch('/api/heatmap').then(r => r.json()).then(renderHeatmap).catch(() => {});
 }
 
 function shortProject(p) {
@@ -2447,7 +2444,7 @@ function connectSSE() {
     if (sessionRange === 'today') {
       sessionsData = JSON.parse(e.data);
       renderSessions(sessionsData);
-      renderHeatmap(sessionsData);
+      fetchHeatmap();
     } else {
       // In "all" view, refetch to include all sessions with enrichment
       fetchSessions();

@@ -427,8 +427,7 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm", m)
 }
 
-func toStoreAggregate(date string, sessions []*parser.SessionSummary) store.DailyAggregate {
-	a := parser.AggregateSessions(sessions)
+func toStoreAggregate(date string, a parser.SessionAggregate) store.DailyAggregate {
 	return store.DailyAggregate{
 		Date:              date,
 		InputTokens:       a.InputTokens,
@@ -442,12 +441,13 @@ func toStoreAggregate(date string, sessions []*parser.SessionSummary) store.Dail
 }
 
 func updateDailyAggregate(claudeDir string, st *store.Store) {
-	sessions, err := parser.DiscoverTodaySessions(claudeDir)
+	daily, err := parser.DiscoverDailyAggregates(claudeDir)
 	if err != nil {
-		log.Printf("[aggregate] Failed to discover today's sessions: %v", err)
+		log.Printf("[aggregate] Failed to compute daily aggregates: %v", err)
 		return
 	}
-	if err := st.UpsertDailyAggregate(toStoreAggregate(time.Now().Format("2006-01-02"), sessions)); err != nil {
+	today := time.Now().Format("2006-01-02")
+	if err := st.UpsertDailyAggregate(toStoreAggregate(today, daily[today])); err != nil {
 		log.Printf("[aggregate] Failed to upsert daily aggregate: %v", err)
 	}
 }
@@ -455,31 +455,22 @@ func updateDailyAggregate(claudeDir string, st *store.Store) {
 func backfillHistory(claudeDir string, st *store.Store) {
 	log.Printf("[backfill] Scanning all sessions for historical data...")
 
-	sessions, err := parser.DiscoverSessions(claudeDir)
+	daily, err := parser.DiscoverDailyAggregates(claudeDir)
 	if err != nil {
-		log.Printf("[backfill] Error discovering sessions: %v", err)
+		log.Printf("[backfill] Error computing daily aggregates: %v", err)
 		return
 	}
 
-	// Group sessions by date
-	byDate := make(map[string][]*parser.SessionSummary)
-	for _, s := range sessions {
-		date := s.LastActivity.Format("2006-01-02")
-		if date == "0001-01-01" {
-			continue
-		}
-		byDate[date] = append(byDate[date], s)
-	}
-
 	count := 0
-	for date, dateSessions := range byDate {
-		if err := st.UpsertDailyAggregate(toStoreAggregate(date, dateSessions)); err != nil {
+	for date, agg := range daily {
+		if err := st.UpsertDailyAggregate(toStoreAggregate(date, agg)); err != nil {
 			log.Printf("[backfill] Failed to upsert aggregate for %s: %v", date, err)
+			continue
 		}
 		count++
 	}
 
-	log.Printf("[backfill] Done: %d days from %d sessions", count, len(sessions))
+	log.Printf("[backfill] Done: %d days", count)
 }
 
 func runUpdate() {

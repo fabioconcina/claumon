@@ -118,13 +118,24 @@ func (h *Handlers) HandleUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleToday(w http.ResponseWriter, r *http.Request) {
-	// Compute from session files for freshest data
-	sessions, err := parser.DiscoverTodaySessions(h.claudeDir)
+	// Bucket tokens by message timestamp so resumed sessions don't credit
+	// their entire history to today.
+	daily, err := parser.DiscoverDailyAggregates(h.claudeDir)
 	if err != nil {
 		writeJSON(w, parser.SessionAggregate{})
 		return
 	}
-	writeJSON(w, parser.AggregateSessions(sessions))
+	today := time.Now().Format("2006-01-02")
+	writeJSON(w, daily[today])
+}
+
+func (h *Handlers) HandleHeatmap(w http.ResponseWriter, r *http.Request) {
+	hours, err := parser.HourlyTokensToday(h.claudeDir)
+	if err != nil {
+		writeJSON(w, [24]int{})
+		return
+	}
+	writeJSON(w, hours)
 }
 
 func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
