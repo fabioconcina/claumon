@@ -753,7 +753,10 @@ tr.clickable { cursor: pointer; }
   border-radius: 10px;
   padding: 16px;
   min-height: 400px;
+  overflow: hidden;
+  cursor: grab;
 }
+.graph-canvas.panning { cursor: grabbing; }
 .graph-canvas svg { display: block; width: 100%; height: 650px; }
 .graph-legend {
   background: var(--bg-surface);
@@ -2172,7 +2175,7 @@ function renderGraphView() {
   layoutGraph(nodes, filteredEdges, width, height, nodeMap);
 
   // Render SVG
-  let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><g id="graph-viewport">`;
 
   // Group backgrounds — grid cells
   const groupNodes = {};
@@ -2220,8 +2223,65 @@ function renderGraphView() {
     svg += `<text x="${n.x}" y="${n.y + r + 12}" font-size="10" fill="var(--text-dim)" text-anchor="middle">${escHtml(n.label.length > 20 ? n.label.slice(0,18) + '..' : n.label)}</text>`;
   });
 
-  svg += '</svg>';
+  svg += '</g></svg>';
   canvas.innerHTML = svg;
+
+  // Zoom + pan
+  const viewport = canvas.querySelector('#graph-viewport');
+  if (!window.__graphZoomState || window.__graphZoomState.width !== width) {
+    window.__graphZoomState = { tx: 0, ty: 0, scale: 1, width };
+  }
+  const zs = window.__graphZoomState;
+  const applyTransform = () => {
+    viewport.setAttribute('transform', `translate(${zs.tx} ${zs.ty}) scale(${zs.scale})`);
+  };
+  applyTransform();
+
+  canvas.onwheel = (ev) => {
+    ev.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const svgEl = canvas.querySelector('svg');
+    const svgRect = svgEl.getBoundingClientRect();
+    const sx = width / svgRect.width;
+    const cx = (ev.clientX - svgRect.left) * sx;
+    const cy = (ev.clientY - svgRect.top) * sx;
+    const factor = Math.exp(-ev.deltaY * 0.0015);
+    const newScale = Math.min(8, Math.max(0.3, zs.scale * factor));
+    const k = newScale / zs.scale;
+    zs.tx = cx - (cx - zs.tx) * k;
+    zs.ty = cy - (cy - zs.ty) * k;
+    zs.scale = newScale;
+    applyTransform();
+  };
+
+  canvas.onmousedown = (ev) => {
+    if (ev.target.tagName === 'circle') return;
+    window.__graphPanning = true;
+    canvas.classList.add('panning');
+    ev.preventDefault();
+  };
+  if (!window.__graphPanHandlersInstalled) {
+    window.__graphPanHandlersInstalled = true;
+    window.addEventListener('mousemove', (ev) => {
+      if (!window.__graphPanning) return;
+      const c = document.getElementById('graph-canvas');
+      const svgEl = c && c.querySelector('svg');
+      const zsCur = window.__graphZoomState;
+      if (!svgEl || !zsCur) return;
+      const svgRect = svgEl.getBoundingClientRect();
+      const sx = zsCur.width / svgRect.width;
+      zsCur.tx += ev.movementX * sx;
+      zsCur.ty += ev.movementY * sx;
+      const vp = c.querySelector('#graph-viewport');
+      if (vp) vp.setAttribute('transform', `translate(${zsCur.tx} ${zsCur.ty}) scale(${zsCur.scale})`);
+    });
+    window.addEventListener('mouseup', () => {
+      if (!window.__graphPanning) return;
+      window.__graphPanning = false;
+      const c = document.getElementById('graph-canvas');
+      if (c) c.classList.remove('panning');
+    });
+  }
 
   // Interactivity
   const tooltip = document.getElementById('graph-tooltip');
