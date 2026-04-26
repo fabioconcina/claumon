@@ -176,6 +176,36 @@ func TestProvider_GetToken_ProactiveReload(t *testing.T) {
 	}
 }
 
+func TestProvider_MarkExpired(t *testing.T) {
+	dir := t.TempDir()
+	writeCredsFile(t, dir, `{
+		"claudeAiOauth": {
+			"accessToken": "valid-token",
+			"expiresAt": `+expiresInFuture()+`
+		}
+	}`)
+
+	p := NewProvider(dir, "")
+	if status, _ := p.Status(); status != AuthOK {
+		t.Fatalf("initial Status() = %q, want ok", status)
+	}
+
+	p.MarkExpired("API rejected token")
+	status, msg := p.Status()
+	if status != AuthExpired {
+		t.Errorf("Status() after MarkExpired = %q, want expired", status)
+	}
+	if msg != "API rejected token" {
+		t.Errorf("Status() message = %q, want %q", msg, "API rejected token")
+	}
+
+	// Empty message falls back to default
+	p.MarkExpired("")
+	if _, msg := p.Status(); msg == "" {
+		t.Errorf("Status() message = empty, want default text")
+	}
+}
+
 func TestProvider_Credentials(t *testing.T) {
 	dir := t.TempDir()
 	writeCredsFile(t, dir, `{

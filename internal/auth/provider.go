@@ -110,6 +110,20 @@ func (p *Provider) Status() (string, string) {
 	return p.authStatus, p.authMessage
 }
 
+// MarkExpired forces the auth status to expired. Used when the API rejects
+// the current token (401) so subsequent polls skip the API until credentials
+// are refreshed externally, regardless of what creds.ExpiresAt reports.
+func (p *Provider) MarkExpired(message string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.authStatus = AuthExpired
+	if message != "" {
+		p.authMessage = message
+	} else {
+		p.authMessage = "Token expired — start a Claude Code session to refresh."
+	}
+}
+
 // Credentials returns a snapshot of the current credentials.
 func (p *Provider) Credentials() *Credentials {
 	p.mu.RLock()

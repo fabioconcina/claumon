@@ -327,6 +327,10 @@ func (p *poller) fetch(ctx context.Context) {
 
 	var authErr *api.AuthError
 	if errors.As(err, &authErr) {
+		// API authoritatively rejected the token. Force-mark expired so the
+		// next poll cycle skips the API instead of triggering another 401
+		// (and eventually a 429 rate limit).
+		p.provider.MarkExpired(authErr.Message)
 		p.enterAuthWait()
 		return
 	}

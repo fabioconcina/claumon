@@ -1,10 +1,3 @@
 ## Fixed
 
-- **Heatmap and today's tokens no longer include prior days** — sessions resumed across midnight credited their full lifetime tokens to today's aggregates and the hourly heatmap. Both are now bucketed by each message's own timestamp.
-- **Session detail timestamps now show dates across day boundaries.**
-- **Process liveness detection on Windows.**
-- **Time-sensitive store tests** that assumed March 2026 dates.
-
-## Changed
-
-- **Expanded tool call detail in the session view.**
+- **Poll loop no longer burns API requests after auth expires.** When the API rejected the cached token with 401 and the keychain still held a stale token, `authStatus` could remain `ok`, so each wake-up hit the API four times before a 429 forced a 1h backoff. The provider is now force-marked expired on any 401 from the usage API, so subsequent polls skip the API entirely until credentials are refreshed externally.
