@@ -243,6 +243,7 @@ type sessionFile struct {
 	path    string
 	project string
 	modTime time.Time
+	size    int64
 }
 
 // enumerateSessionFiles walks claudeDir/projects/*/ for *.jsonl and returns
@@ -271,7 +272,7 @@ func enumerateSessionFiles(claudeDir string) ([]sessionFile, error) {
 			if err != nil {
 				continue
 			}
-			files = append(files, sessionFile{path: f, project: projName, modTime: info.ModTime()})
+			files = append(files, sessionFile{path: f, project: projName, modTime: info.ModTime(), size: info.Size()})
 		}
 	}
 	return files, nil
@@ -556,6 +557,41 @@ func HourlyTokensToday(claudeDir string) ([24]int, error) {
 	return hours, nil
 }
 
+// dailyParseCache memoizes ParseSessionFileDaily results keyed by absolute path.
+// An entry is valid as long as the file's mtime and size are unchanged — both
+// are checked so a truncate+rewrite at the same instant still invalidates.
+// Returned bucket maps are shared with the cache; callers must treat them as
+// read-only.
+var (
+	dailyParseCacheMu sync.RWMutex
+	dailyParseCache   = map[string]dailyParseCacheEntry{}
+)
+
+type dailyParseCacheEntry struct {
+	modTime time.Time
+	size    int64
+	buckets map[string]*SessionAggregate
+}
+
+func parseSessionFileDailyCached(path string, modTime time.Time, size int64) (map[string]*SessionAggregate, error) {
+	dailyParseCacheMu.RLock()
+	e, ok := dailyParseCache[path]
+	dailyParseCacheMu.RUnlock()
+	if ok && e.size == size && e.modTime.Equal(modTime) {
+		return e.buckets, nil
+	}
+
+	buckets, err := ParseSessionFileDaily(path)
+	if err != nil {
+		return nil, err
+	}
+
+	dailyParseCacheMu.Lock()
+	dailyParseCache[path] = dailyParseCacheEntry{modTime: modTime, size: size, buckets: buckets}
+	dailyParseCacheMu.Unlock()
+	return buckets, nil
+}
+
 // DiscoverDailyAggregates walks all session files and returns aggregates
 // bucketed by message timestamp (local date). SessionCount on each entry is
 // the number of distinct session files that contributed any message on that
@@ -573,7 +609,7 @@ func DiscoverDailyAggregates(claudeDir string) (map[string]SessionAggregate, err
 	perDay := map[string]*acc{}
 
 	for _, f := range files {
-		buckets, err := ParseSessionFileDaily(f.path)
+		buckets, err := parseSessionFileDailyCached(f.path, f.modTime, f.size)
 		if err != nil {
 			continue
 		}
