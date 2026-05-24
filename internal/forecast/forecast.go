@@ -1,6 +1,7 @@
 // Package forecast projects open rate-limit windows to reset and estimates
-// threshold ETAs. The math is specified in MODEL.md; this file is the public
-// entry point. See rate.go, eta.go, calibration.go for the pieces.
+// threshold ETAs. The math is specified in MODEL.pdf (LaTeX source in
+// MODEL.tex); this file is the public entry point. See rate.go, eta.go,
+// calibration.go for the pieces.
 package forecast
 
 import "time"
@@ -140,7 +141,7 @@ type Input struct {
 	Thresholds  []float64 // e.g. {1.0} for 100%
 }
 
-// Run produces a full forecast for one gauge. See MODEL.md.
+// Run produces a full forecast for one gauge. See MODEL.pdf.
 func Run(in Input, cfg Config) (Result, bool) {
 	cfg = cfg.withDefaults()
 

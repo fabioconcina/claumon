@@ -1,6 +1,6 @@
 ## Forecasts on the rate-limit gauges
 
-Each gauge now shows a projection of where utilization will land at reset, with an 80% credible band, an ETA to threshold (default 100%), and a `LOW`/`MED`/`HIGH` confidence pill. This is an *empirical Bayes* forecast: the prior on the rate and the path-noise variance are both estimated from past data and plugged in to a posterior update, rather than being marginalized under a hyperprior. The full spec lives at [`internal/forecast/MODEL.md`](internal/forecast/MODEL.md); the gist:
+Each gauge now shows a projection of where utilization will land at reset, with an 80% credible band, an ETA to threshold (default 100%), and a `LOW`/`MED`/`HIGH` confidence pill. This is an *empirical Bayes* forecast: the prior on the rate and the path-noise variance are both estimated from past data and plugged in to a posterior update, rather than being marginalized under a hyperprior. The full spec lives in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf); the gist:
 
 - **Rate posterior.** Inside the open window, utilization is modeled as `u(t) = u_now + r·t + W(t)`, with `r` an unknown per-hour rate and `W` Brownian path noise with per-hour variance `σ²`. The current rate is fit by OLS on the last 30 minutes of snapshots; that OLS slope and its standard error are treated as a Gaussian likelihood `r̂_OLS | r ~ N(r, SE²_OLS)`, then fused with a Gaussian empirical prior on `r` (mean `μ₀`, variance `τ₀²`) via the standard conjugate normal-normal update. The prior is refit daily from up to 200 completed past windows.
 

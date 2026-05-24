@@ -1,0 +1,483 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{microtype}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!50!black,
+  pdftitle={Rate-Limit Forecast Model},
+  pdfauthor={claumon},
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  frame=single,
+  xleftmargin=1em,
+  framexleftmargin=0.5em,
+  framesep=0.5em,
+  framerule=0pt,
+  backgroundcolor=\color{gray!10},
+}
+
+\newcommand{\rhat}{\hat r}
+\newcommand{\sighat}{\hat\sigma}
+\newcommand{\rpost}{\hat r_{\text{post}}}
+\newcommand{\taupostsq}{\tau_{\text{post}}^2}
+\newcommand{\tauzerosq}{\tau_0^2}
+\newcommand{\rols}{\hat r_{\text{OLS}}}
+\newcommand{\seols}{\mathrm{SE}_{\text{OLS}}}
+\newcommand{\seolssq}{\mathrm{SE}_{\text{OLS}}^2}
+\newcommand{\sigsessionsq}{\sigma_{\text{session}}^2}
+\newcommand{\unow}{u_{\text{now}}}
+\newcommand{\tnow}{t_{\text{now}}}
+\newcommand{\Treset}{T_{\text{reset}}}
+\newcommand{\Dtrem}{\Delta t_{\text{rem}}}
+\newcommand{\Cthr}{C_{\text{thr}}}
+\newcommand{\taurecent}{\tau_{\text{recent}}}
+\newcommand{\Tstar}{T^\ast}
+\newcommand{\Tstark}{T^\ast_k}
+
+\title{Rate-Limit Forecast Model}
+\author{claumon \texttt{internal/forecast}}
+\date{}
+
+\begin{document}
+\maketitle
+
+This document specifies the math behind \texttt{internal/forecast}. It is
+normative: implementations must match the formulas here, and deviations are
+bugs unless this document is updated.
+
+\section{What we forecast}
+
+For each open rate-limit window (session, weekly, per-model weekly), the
+forecaster reads the time series of utilization snapshots and produces:
+
+\begin{enumerate}
+  \item A point estimate $F$ of the utilization at reset.
+  \item An 80\% \textbf{credible interval} $[F^-, F^+]$ for $F$. (We use the
+    looser ``confidence'' wording in user-facing strings only; the posterior
+    is Bayesian, see \S\ref{sec:rate}.)
+  \item For each threshold $\Cthr$ (e.g.\ 100\%), either a median ETA with an
+    80\% CI, or \texttt{nil} if the threshold is unlikely to be reached
+    before reset.
+  \item A confidence tag in $\{\text{Low}, \text{Medium}, \text{High}\}$.
+\end{enumerate}
+
+This procedure is an \emph{empirical Bayes} forecast: the prior on the rate
+$r$ and the path-noise variance $\sigma^2$ are both estimated from past data
+(\S\ref{sec:rate}, \S\ref{sec:calib}) and then plugged into the posterior
+update, rather than being themselves marginalized under a hyperprior. The
+conjugate update on $r$ and the Monte Carlo over rate-and-path uncertainty
+are genuinely Bayesian; the ``empirical'' qualifier refers to the prior, not
+the inference step.
+
+A separate forecast is produced per gauge. The only cross-window sharing is
+through the calibration constants (\S\ref{sec:calib}).
+
+\section{The model in one paragraph}
+
+Inside the current window, utilization $u(t)$ grows at an unknown constant
+rate $r$ plus Brownian noise (random behavioral pivots). We estimate $r$ from
+the recent slope of the snapshots (OLS) and from a Gaussian prior fit on
+past sessions, combined by conjugate update. The forecast at reset is the
+sum of two random pieces: deterministic-time-times-uncertain-rate, plus
+Brownian accumulation over the remaining horizon. Both pieces are Gaussian,
+so the forecast is Gaussian and the CI is a $z$-quantile. The ETA has no
+closed form, so we Monte Carlo it.
+
+\section{Generative model and assumptions}
+
+For $s \in [0, \Dtrem]$ with $\Dtrem = \Treset - \tnow$,
+\[
+  u(\tnow + s) = \unow + r\,s + W(s),
+  \qquad W(s) \sim \mathcal{N}\!\bigl(0,\, \sigsessionsq\,s\bigr),
+\]
+with $r$ unknown and $W$ a Brownian motion independent of $r$. Three
+assumptions:
+
+\begin{enumerate}
+  \item \textbf{Linear conditional mean.} $r$ is constant within a window.
+    Violated by abrupt mid-window mode shifts; partially absorbed by the
+    recency window in \S\ref{sec:rate}.
+  \item \textbf{Brownian path noise.} Variance grows linearly with time.
+    Approximately correct if behavioral pivots are mean-zero and not too
+    heavy-tailed.
+  \item \textbf{Exchangeable past sessions.} Historical sessions are iid
+    draws from the same noise process. Required for the calibration in
+    \S\ref{sec:calib}.
+\end{enumerate}
+
+\section{Notation}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Symbol & Meaning \\
+\midrule
+$u(t),\, \unow$              & utilization at time $t$ and at now, $\in [0,1]$ \\
+$\tnow,\, \Treset,\, \Dtrem$ & now, reset, remaining horizon (h) \\
+$r$                          & true mean growth rate within window ($\mathrm{h}^{-1}$) \\
+$\rols,\, \seols$            & OLS estimate and its standard error \\
+$\mu_0,\, \tauzerosq$        & Gaussian prior on $r$ from history \\
+$\rpost,\, \taupostsq$       & posterior on $r$ after the OLS update \\
+$\sigsessionsq$              & Brownian diffusion coefficient ($\mathrm{h}^{-1}$) \\
+$F,\, \sigma_F^2$            & point forecast and its variance \\
+$z_{0.9}$                    & $\Phi^{-1}(0.9) \approx 1.2816$ \\
+$K,\, \Delta s$              & MC trajectories, step size (defaults: 500, 5 min) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Estimating the rate}\label{sec:rate}
+
+Combine two sources of information about $r$.
+
+\paragraph{From the current window.} Let $\mathcal{R}$ be the snapshots in
+$[\tnow - \taurecent,\, \tnow]$ and $n = \lvert\mathcal{R}\rvert$. For $n
+\geq 3$, fit $u_i = \alpha + r\,t_i + \epsilon_i$ by OLS:
+\[
+  \rols = \frac{S_{tu}}{S_{tt}},
+  \qquad \seolssq = \frac{\sighat_\epsilon^2}{S_{tt}},
+\]
+with $S_{tt} = \sum (t_i - \bar t)^2$, $S_{tu} = \sum (t_i - \bar t)(u_i -
+\bar u)$, and $\sighat_\epsilon^2 = \tfrac{1}{n-2} \sum (u_i - \hat\alpha -
+\rols\,t_i)^2$. Default $\taurecent = 30$\,min.
+
+Strictly, Brownian residuals are heteroskedastic and serially correlated, so
+the iid-OLS variance formula above is an approximation. For the short
+recency window the discrepancy is small and the point estimate is unbiased
+either way; we accept the approximation and treat $\seolssq$ as the
+likelihood precision in the conjugate update below.
+
+\paragraph{From history.} For each past completed session $s$ with final
+value $u_s^\ast$ and duration $D_s$, define $\rho_s = u_s^\ast / D_s$. The
+prior mean is the sample mean of $\rho_s$. For the prior variance, note that
+under the generative model
+\[
+  \rho_s = r_s + \frac{W_s(D_s)}{D_s},
+  \qquad \mathrm{Var}[\rho_s] = \mathrm{Var}[r_s] + \frac{\sigsessionsq}{D_s},
+\]
+so the raw sample variance of $\rho_s$ overstates $\mathrm{Var}[r_s]$ by the
+average path-noise contribution. Subtract it off:
+\[
+  \mu_0 = \mathrm{mean}_s\,\rho_s,
+  \qquad
+  \tauzerosq = \max\!\Bigl(\mathrm{var}_s\,\rho_s
+    - \sigsessionsq \cdot \mathrm{mean}_s(1/D_s),\ \varepsilon\Bigr),
+\]
+with $\varepsilon = 10^{-6}$ guarding against negative estimates from small
+samples. This uses the most recent $\sigsessionsq$ from \S\ref{sec:calib};
+the two fits depend on each other but only loosely, and the daily refit
+cycle converges quickly. On the very first fit (before \S\ref{sec:calib} has
+run), $\sigsessionsq = 0$ and the correction is a no-op.
+
+Fit at startup, refresh daily.
+
+\paragraph{Combine.} Normal-normal conjugacy gives the posterior $r \mid
+\rols \sim \mathcal{N}(\rpost,\, \taupostsq)$:
+\[
+  \frac{1}{\taupostsq} = \frac{1}{\tauzerosq} + \frac{1}{\seolssq},
+  \qquad
+  \rpost = \taupostsq
+    \left(\frac{\mu_0}{\tauzerosq} + \frac{\rols}{\seolssq}\right).
+\]
+Limits: prior dominates when $\seols$ is large (early window); data
+dominates when $\seols$ is small (later in the window). For $n < 3$ the OLS
+step is undefined; use $\rpost = \mu_0$, $\taupostsq = \tauzerosq$.
+
+\section{Forecast distribution at reset}
+
+The point forecast is
+\[
+  F = \unow + \rpost\,\Dtrem.
+\]
+By the law of total variance, conditioning on $r$:
+\[
+  \sigma_F^2 = \underbrace{\Dtrem^2\,\taupostsq}_{\text{rate uncertainty}}
+            + \underbrace{\Dtrem\,\sigsessionsq}_{\text{path noise}}.
+\]
+Both contributions are Gaussian under the model, so $u(\Treset) \sim
+\mathcal{N}(F, \sigma_F^2)$. The two terms have different scaling: rate
+uncertainty is quadratic in horizon (dominates at long horizons), path noise
+is linear (dominates at short).
+
+\paragraph{80\% CI.} $[F - z_{0.9}\,\sigma_F,\ F + z_{0.9}\,\sigma_F]$,
+clipped to $[0, 1]$ for display. The unclipped $F$ is retained for ETA
+computation.
+
+\section{Calibration of $\sigsessionsq$}\label{sec:calib}
+
+\paragraph{What we learn.} One scalar: how much utilization can drift from
+the trend per hour of waiting. It is the only quantity history contributes
+to the forecast \emph{spread} (the prior $\mu_0,\,\tauzerosq$ contributes to
+the \emph{mean}).
+
+\paragraph{Strategy.} Run the forecaster on past sessions, where we already
+know the answer, and measure how wrong it was as a function of horizon.
+Read $\sigsessionsq$ off the empirical error structure.
+
+\paragraph{Replay.} For each past session $s$ with reset value $u_s^\ast$ at
+$T_s$, sample forecast points $t_f \in [t_s + \taurecent,\, T_s -
+\Delta_{\min}]$ (default 6 per session, $\Delta_{\min} = 30$\,min). At each
+$t_f$, run \S\ref{sec:rate} on snapshots in $[t_f - \taurecent,\, t_f]$ to
+obtain $\rpost(t_f)$, and the projection $\hat F(t_f) = u(t_f) +
+\rpost(t_f)\,(T_s - t_f)$. Record
+\[
+  e_f = u_s^\ast - \hat F(t_f),
+  \qquad
+  \delta_f = T_s - t_f.
+\]
+
+\paragraph{Two sources of error in each residual.} The residual $e_f$ mixes
+(A) the rate estimate being off at $t_f$, with the error compounded over
+$\delta_f$, and (B) Brownian path noise accumulating over $\delta_f$. By the
+same decomposition as \S5,
+\[
+  \mathbb{E}[e_f^2 \mid \delta_f]
+  = \underbrace{\delta_f\,\sigsessionsq}_{\text{path noise (B)}}
+  + \underbrace{\delta_f^2\,\bar\tau^2}_{\text{rate uncertainty (A)}},
+\]
+with $\bar\tau^2$ the average posterior rate variance at the forecast
+points. The two contributions scale differently in $\delta_f$, which is what
+lets us separate them. Naive averaging like $\sigsessionsq \approx
+\mathrm{mean}_f(e_f^2 / \delta_f)$ would not separate them and would bias
+the estimate upward by a $\delta_f\,\bar\tau^2$ contamination.
+
+\paragraph{Joint regression.} Fit both unknowns by OLS of $e_f^2$ on
+$[\delta_f,\, \delta_f^2]$ (no intercept):
+\[
+  (\hat a, \hat b)
+    = \arg\min_{a, b} \sum_f \bigl(e_f^2 - a\,\delta_f - b\,\delta_f^2\bigr)^2,
+  \qquad
+  \sigsessionsq := \max(\hat a,\, 10^{-6}).
+\]
+The coefficient $\hat a$ on the linear term is the per-hour path-noise
+variance: that is the quantity we want.
+
+Note that this regression treats $\bar\tau^2$ as constant across forecast
+points, while in reality $\taupostsq(t_f)$ varies (it depends on how many
+recent snapshots existed at $t_f$). If $\taupostsq(t_f)$ correlates with
+$\delta_f$ --- and it usually does, since $\delta_f$ is anti-correlated with
+elapsed time in the session --- the missing covariance leaks into $\hat a$.
+A tighter alternative is to subtract the known $\delta_f^2\,\taupostsq(t_f)$
+piece as an offset and regress the residual on $\delta_f$ alone; we keep
+the joint regression for simplicity and absorb the bias into the daily
+refit.
+
+\paragraph{Why $\hat b$ is discarded.} Conceptually $\hat b$ estimates the
+same quantity as $\taupostsq$ in \S\ref{sec:rate} (the rate-estimation
+variance), just as a historical average instead of a fresh per-forecast
+value. The per-forecast version in \S\ref{sec:rate} uses today's actual
+snapshots, so it is strictly more informative; $\hat b$ is redundant.
+
+The $b\,\delta_f^2$ term still has to be \emph{present in the regression},
+though. Without it, the $\delta_f^2\,\bar\tau^2$ piece of $e_f^2$ has
+nowhere to go but $\hat a$, biasing it upward. So $b$ is included as a
+nuisance parameter (analogous to adjusting for a confounder in a
+regression: we control for its contribution without caring about its fitted
+value), and discarded once $\hat a$ is clean.
+
+\paragraph{Floor and refit.} The floor on $\hat a$ guards against negative
+estimates from small samples (OLS does not enforce sign). Refit daily.
+
+\section{Threshold ETA}
+
+For threshold $\Cthr$ with $\unow < \Cthr \leq 1$, the first-passage time is
+$\Tstar = \inf\{t > \tnow : u(t) \geq \Cthr\}$, with $\Tstar = \infty$ if no
+crossing in $[\tnow,\, \Treset]$.
+
+\paragraph{Deterministic ETA (point estimate).} Setting $W \equiv 0$ and $r
+= \rpost$:
+\[
+  \tilde\Tstar = \tnow + \frac{\Cthr - \unow}{\rpost},
+\]
+defined when $\rpost > 0$ and $\tilde\Tstar \leq \Treset$; else
+\texttt{nil}. Note that $\tilde\Tstar$ is \textbf{not} the median of
+$\Tstar$ under the full stochastic model. Two effects pull in opposite
+directions:
+
+\begin{itemize}
+  \item \emph{BM skew (pulls median down).} For BM with fixed drift $\mu > 0$
+    hitting $a > 0$, $\Tstar \sim \mathrm{IG}(a/\mu,\, a^2/\sigma^2)$ with
+    mean $a/\mu$ and right skew, so $\mathrm{median}(\Tstar \mid r{=}\mu) <
+    a/\mu$.
+  \item \emph{Rate uncertainty (pulls median up).} Mixing over $r \sim
+    \mathcal{N}(\rpost,\, \taupostsq)$ inflates first-passage times
+    asymmetrically: the map $r \mapsto a/r$ is convex on $r > 0$ and
+    steepens sharply as $r \to 0^+$, so the right tail of $\Tstar$
+    stretches far more than the left tail compresses. Any mass at $r \leq
+    0$ contributes additional atoms at $\Tstar = \infty$. Both effects pull
+    the median of $\Tstar$ above $\tilde\Tstar$.
+\end{itemize}
+
+Which effect wins depends on the regime, so $\mathrm{median}(\Tstar)$ can
+sit on either side of $\tilde\Tstar$. The MC percentiles below are the
+authoritative summary; $\tilde\Tstar$ is a cheap deterministic anchor, not
+an estimator of the median.
+
+\paragraph{CI via Monte Carlo.} The first-passage time of a Brownian motion
+with random Gaussian drift has no tractable closed form. Simulate $K = 500$
+trajectories:
+
+\begin{lstlisting}
+for k in 1..K:
+    r_k    = N(r_hat_post, tau_post^2)     # may be negative; do NOT clip
+    u_k[0] = u_now
+    for j in 1..M, dt = step size of jth bucket:
+        u_k[j] = u_k[j-1] + r_k * dt + N(0, sigma_session^2 * dt)
+    T*_k = linear interpolation of first j with u_k[j] >= C_thr
+         = infinity if none
+\end{lstlisting}
+
+Negative $r_k$ draws are kept as-is: those trajectories drift downward and
+typically yield $\Tstark = \infty$, which is the correct outcome under the
+model. Clipping to zero would bias crossings upward and contradict \S5.
+
+\paragraph{Reported summaries.} Let $p_\infty$ be the fraction of
+trajectories with $\Tstark = \infty$. Define $\tilde\Tstar_{\text{MC}} =
+\mathrm{median}(\Tstark)$ over the \textbf{full} sample (treating $\infty$
+as larger than any finite value):
+
+\begin{itemize}
+  \item If $p_\infty \geq 0.5$: the true median is $\infty$. Report ETA as
+    \texttt{nil}.
+  \item If $p_\infty < 0.5$ but $p_\infty \geq 0.1$: the median is finite
+    but the 90th percentile is $\infty$. Report median, lower bound = 10th
+    percentile of finite $\Tstark$, upper bound = \texttt{nil}
+    (open-ended).
+  \item If $p_\infty < 0.1$: report median and full 80\% CI from the 10th
+    and 90th percentiles of finite $\Tstark$.
+\end{itemize}
+
+RNG seed derived from $(\tnow,\, \Treset,\, \unow,\, \rpost,\, \taupostsq,\,
+\sigsessionsq)$ for test reproducibility.
+
+\section{Confidence tag}
+
+Summarises the effective amount of evidence:
+\[
+  N_{\text{eff}} = \min\!\left(n,\
+    \frac{\tauzerosq}{\seolssq} + \lvert\mathcal{S}\rvert\right).
+\]
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Tag & Threshold \\
+\midrule
+High   & $N_{\text{eff}} \geq 50$ \\
+Medium & $15 \leq N_{\text{eff}} < 50$ \\
+Low    & $N_{\text{eff}} < 15$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Thresholds are heuristics; revisit after seeing real values.
+
+\section{Edge cases}
+
+\begin{center}
+\begin{tabular}{@{}p{0.4\textwidth}p{0.55\textwidth}@{}}
+\toprule
+Case & Handling \\
+\midrule
+$n < 3$ snapshots in $\mathcal{R}$
+  & Use prior alone: $\rpost = \mu_0$, $\taupostsq = \tauzerosq$ \\
+Prior empty ($\lvert\mathcal{S}\rvert < 2$)
+  & Suppress forecast; UI shows ``collecting data'' \\
+Reset detected in $\mathcal{R}$ ($u_{i+1} < u_i$)
+  & Drop pre-reset snapshots; refit \\
+$\Cthr \leq \unow$
+  & Threshold already crossed; return $\Tstar = \tnow$ \\
+$\rpost \leq 0$
+  & Deterministic ETA undefined; rely on MC summary \\
+$F \notin [0, 1]$
+  & Clip for display; retain unclipped for downstream \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Worked example}
+
+5-hour session window: $t_{\text{start}} = 11{:}00$, $\Treset = 16{:}00$,
+$\tnow = 13{:}00$, $\unow = 0.30$, so $\Dtrem = 3$\,h.
+
+Last four snapshots ($\taurecent = 30$\,min):
+
+\begin{center}
+\begin{tabular}{@{}ccc@{}}
+\toprule
+$i$ & $t_i$ (h from 12{:}30) & $u_i$ \\
+\midrule
+1 & 0.000 & 0.270 \\
+2 & 0.167 & 0.280 \\
+3 & 0.333 & 0.295 \\
+4 & 0.500 & 0.300 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+OLS: $\rols \approx 0.0630\,\mathrm{h}^{-1}$, $\seolssq \approx 6.30 \times
+10^{-5}$.
+
+Prior (suppose, from history, after the \S\ref{sec:rate} noise correction):
+$\mu_0 = 0.080\,\mathrm{h}^{-1}$, $\tauzerosq = 3.6 \times 10^{-3}$.
+
+Posterior: $\taupostsq \approx 6.19 \times 10^{-5}$, $\rpost \approx
+0.0633\,\mathrm{h}^{-1}$ (data dominates).
+
+Calibration: $\sigsessionsq = 2.5 \times 10^{-3}\,\mathrm{h}^{-1}$.
+
+Forecast:
+\[
+  F = 0.30 + 0.0633 \cdot 3 \approx 0.490,
+\]
+\[
+  \sigma_F^2 \approx 9 \cdot 6.19 \times 10^{-5}
+    + 3 \cdot 2.5 \times 10^{-3}
+    \approx 5.6 \times 10^{-4} + 7.5 \times 10^{-3}
+    \approx 8.1 \times 10^{-3},
+\]
+\[
+  \sigma_F \approx 0.090.
+\]
+
+80\% CI: $[0.490 - 1.282 \cdot 0.090,\ 0.490 + 1.282 \cdot 0.090]
+\approx [0.375,\ 0.605]$. Display: ``Projected 49\% by reset (80\% CI:
+38\%--60\%)''.
+
+Path noise dominates rate uncertainty by $13\times$. That is: we know the
+current slope well; the spread is ``you might pivot.''
+
+ETA to 100\%: gap is 0.70, deterministic crossing at $13{:}00 +
+0.70/0.0633 \approx 24{:}04$, far beyond reset. Returned as \texttt{nil}.
+The MC confirms by producing infinite crossings for almost all
+trajectories.
+
+\section{Limitations and upgrade paths}
+
+\begin{itemize}
+  \item \textbf{Heavy-tailed pivots.} Real per-hour increments are
+    heavier-tailed than Gaussian. The 80\% CI undercovers in the tails.
+    Cheap fix when calibration data is plentiful: replace $z_{0.9}$ with an
+    empirical quantile of standardized residuals.
+  \item \textbf{Constant-rate assumption.} A mode shift within the window
+    (deep work $\to$ meetings) breaks (A1). The recency window $\taurecent$
+    absorbs slow drift but not abrupt shifts. The principled upgrade is a
+    Kalman filter where $r$ is a slowly-varying latent process.
+  \item \textbf{Global $\sigsessionsq$.} Pivot variance may depend on
+    day-of-week or project type. Stratified calibration is the upgrade, but
+    requires more sessions per stratum.
+\end{itemize}
+
+\end{document}
