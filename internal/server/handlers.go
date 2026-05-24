@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fabioconcina/claumon/internal/auth"
+	"github.com/fabioconcina/claumon/internal/forecast"
 	"github.com/fabioconcina/claumon/internal/memory"
 	"github.com/fabioconcina/claumon/internal/parser"
 	"github.com/fabioconcina/claumon/internal/store"
@@ -28,6 +29,7 @@ type Handlers struct {
 	SubscriptionType string
 	RateLimitTier    string
 	StuckThreshold   time.Duration
+	Forecast         *forecast.Service
 }
 
 type memoryCache struct {
@@ -294,6 +296,27 @@ func (h *Handlers) HandleInfo(w http.ResponseWriter, r *http.Request) {
 		info["auth_message"] = msg
 	}
 	writeJSON(w, info)
+}
+
+// HandleForecast returns the latest cached forecast embedded in the usage
+// payload. The poll loop owns the actual forecasting; this endpoint is a
+// pull-style convenience for clients that don't want to drive SSE.
+//
+// Response is always {"available": bool, "data": {...}}: data is nil when
+// available is false.
+func (h *Handlers) HandleForecast(w http.ResponseWriter, r *http.Request) {
+	h.usageMu.RLock()
+	data := h.latestUsage
+	h.usageMu.RUnlock()
+
+	resp := map[string]interface{}{"available": false, "data": nil}
+	if data != nil {
+		if fc, ok := data["forecast"]; ok {
+			resp["available"] = true
+			resp["data"] = fc
+		}
+	}
+	writeJSON(w, resp)
 }
 
 func (h *Handlers) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {

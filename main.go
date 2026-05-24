@@ -20,6 +20,7 @@ import (
 
 	"github.com/fabioconcina/claumon/internal/api"
 	"github.com/fabioconcina/claumon/internal/auth"
+	"github.com/fabioconcina/claumon/internal/forecast"
 	"github.com/fabioconcina/claumon/internal/parser"
 	"github.com/fabioconcina/claumon/internal/pricing"
 	"github.com/fabioconcina/claumon/internal/server"
@@ -142,6 +143,14 @@ func main() {
 	srv.Handlers.RateLimitTier = creds.RateLimitTier
 	srv.Handlers.StuckThreshold = time.Duration(cfg.StuckThresholdMins) * time.Minute
 
+	// Forecast service: prior + calibration cached, refit daily. The fit only
+	// reads completed past sessions, so we can kick it off immediately; on a
+	// fresh DB it's a no-op and the first poll's forecast will simply be
+	// suppressed until history accumulates.
+	fcSvc := forecast.NewService(&storeAdapter{st: st}, forecast.DefaultConfig())
+	srv.Handlers.Forecast = fcSvc
+	go fcSvc.RefitAll(time.Now())
+
 	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -152,7 +161,7 @@ func main() {
 	// Start usage poller (provider handles credential reload on expiry)
 	if provider.HasToken() {
 		apiClient := api.NewClient(provider)
-		go pollUsage(ctx, apiClient, provider, st, srv.Broker, srv.Handlers, time.Duration(cfg.PollIntervalSecs)*time.Second)
+		go pollUsage(ctx, apiClient, provider, st, srv.Broker, srv.Handlers, fcSvc, time.Duration(cfg.PollIntervalSecs)*time.Second)
 	}
 
 	// Start file watcher
@@ -181,7 +190,7 @@ func main() {
 		go w.Start(ctx)
 	}
 
-	// Daily maintenance: refresh pricing and prune old data
+	// Daily maintenance: refresh pricing, prune old data, refit forecast.
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
@@ -194,6 +203,7 @@ func main() {
 				if err := st.Prune(cfg.RetentionDays); err != nil {
 					log.Printf("[prune] Error: %v", err)
 				}
+				fcSvc.RefitAll(time.Now())
 			}
 		}
 	}()
@@ -251,7 +261,7 @@ func main() {
 	log.Printf("[shutdown] bye")
 }
 
-func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, interval time.Duration) {
+func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, fcSvc *forecast.Service, interval time.Duration) {
 	// Initial fetch with a small delay to avoid hitting the API immediately on every restart
 	select {
 	case <-ctx.Done():
@@ -259,7 +269,7 @@ func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider,
 	case <-time.After(5 * time.Second):
 	}
 	p := &poller{
-		client: client, provider: provider, st: st, broker: broker, handlers: handlers,
+		client: client, provider: provider, st: st, broker: broker, handlers: handlers, forecast: fcSvc,
 		interval: interval, backoff: interval, lastAuthOK: true,
 	}
 
@@ -280,6 +290,7 @@ type poller struct {
 	st          *store.Store
 	broker      *server.SSEBroker
 	handlers    *server.Handlers
+	forecast    *forecast.Service
 	interval    time.Duration
 	backoff     time.Duration
 	lastAuthOK  bool
@@ -317,7 +328,7 @@ func (p *poller) fetch(ctx context.Context) {
 		p.authWaiting = false
 	}
 
-	err := fetchAndBroadcastUsage(ctx, p.client, p.st, p.broker, p.handlers)
+	err := fetchAndBroadcastUsage(ctx, p.client, p.st, p.broker, p.handlers, p.forecast)
 	p.lastAuthOK = broadcastAuthStatus(p.provider, p.broker, p.lastAuthOK)
 	if err == nil {
 		p.backoff = p.interval
@@ -368,7 +379,7 @@ func retryBackoff(err error, defaultBackoff time.Duration) time.Duration {
 	return defaultBackoff
 }
 
-func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers) error {
+func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, fcSvc *forecast.Service) error {
 	usage, err := client.FetchUsage(ctx)
 	if err != nil {
 		log.Printf("[poll] Usage fetch error: %v", err)
@@ -382,10 +393,70 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 
 	// Broadcast to SSE clients
 	evt := buildUsageEvent(usage)
+	attachForecasts(evt, usage, fcSvc)
 	broker.SendJSON("usage", evt)
 	handlers.SetLatestUsage(evt)
 	log.Printf("[poll] Usage: session=%.1f%% weekly=%.1f%%", usage.SessionPercent, usage.WeeklyPercent)
 	return nil
+}
+
+// attachForecasts runs the forecast service against the current usage payload
+// and folds the per-gauge results into evt under the "forecast" key. Empty on
+// the first few polls until the daily refit lands and history exists.
+func attachForecasts(evt map[string]interface{}, usage *api.UsageResponse, fcSvc *forecast.Service) {
+	now := time.Now()
+	thresholds := []float64{100}
+	out := map[string]forecast.Payload{}
+
+	if usage.SessionResetAt != "" {
+		if res, ok := fcSvc.ForecastFor(forecast.GaugeSession, usage.SessionResetAt, usage.SessionPercent, now, thresholds); ok {
+			out["session"] = res.ToPayload(thresholds)
+		}
+	}
+	if usage.WeeklyResetAt != "" {
+		if res, ok := fcSvc.ForecastFor(forecast.GaugeWeekly, usage.WeeklyResetAt, usage.WeeklyPercent, now, thresholds); ok {
+			out["weekly"] = res.ToPayload(thresholds)
+		}
+	}
+	if len(out) > 0 {
+		evt["forecast"] = out
+	}
+}
+
+// storeAdapter bridges *store.Store to the forecast.Store interface so the
+// forecast package doesn't import internal/store directly.
+type storeAdapter struct{ st *store.Store }
+
+func (a *storeAdapter) GetWindowSnapshots(gauge, resetAt string, since time.Time) ([]forecast.StoreSnapshot, error) {
+	rows, err := a.st.GetWindowSnapshots(gauge, resetAt, since)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]forecast.StoreSnapshot, len(rows))
+	for i, r := range rows {
+		out[i] = forecast.StoreSnapshot{Time: r.Time, U: r.U}
+	}
+	return out, nil
+}
+
+func (a *storeAdapter) GetCompletedSessions(gauge string, before time.Time, limit int) ([]forecast.StoreSession, error) {
+	rows, err := a.st.GetCompletedSessions(gauge, before, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]forecast.StoreSession, len(rows))
+	for i, r := range rows {
+		snaps := make([]forecast.StoreSnapshot, len(r.Snapshots))
+		for j, sn := range r.Snapshots {
+			snaps[j] = forecast.StoreSnapshot{Time: sn.Time, U: sn.U}
+		}
+		out[i] = forecast.StoreSession{
+			ResetAt:   r.ResetAt,
+			UFinal:    r.UFinal,
+			Snapshots: snaps,
+		}
+	}
+	return out, nil
 }
 
 func buildUsageEvent(usage *api.UsageResponse) map[string]interface{} {

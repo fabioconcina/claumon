@@ -153,6 +153,7 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 - **Weekly usage** — 7-day window utilization with reset countdown
 - **Per-model quotas** — separate Opus and Sonnet weekly limits (when applicable)
 - **Extra usage credits** — monthly limit and spend (if enabled)
+- **Forecasts** — projected utilization at reset with an 80% credible interval, ETA to threshold, and a `LOW`/`MED`/`HIGH` confidence pill. Empirical-Bayes model refit daily from past windows; see [`internal/forecast/MODEL.md`](internal/forecast/MODEL.md).
 
 Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
 

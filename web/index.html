@@ -102,6 +102,28 @@ a:hover { text-decoration: underline; }
 .gauge-info h3 { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .gauge-info .pct { font-size: 24px; font-weight: 700; color: var(--text-bright); }
 .gauge-info .reset { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.gauge-info .forecast { font-size: 10px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+.gauge-info .forecast .fc-proj { color: var(--text-dim); }
+.gauge-info .forecast .fc-ci { color: var(--text-dim); opacity: 0.8; }
+.gauge-info .forecast .fc-eta { color: var(--text-dim); margin-top: 1px; }
+.fc-sep { color: var(--text-dim); opacity: 0.5; margin: 0 6px; }
+.fc-conf-label { color: var(--text-dim); opacity: 0.8; }
+.fc-pill {
+  display: inline-block;
+  font-size: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 0 5px;
+  border-radius: 6px;
+  margin-left: 4px;
+  vertical-align: 1px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: transparent;
+}
+.fc-pill-medium { color: var(--yellow); border-color: rgba(232, 200, 114, 0.5); }
+.fc-pill-high   { color: var(--green);  border-color: rgba(143, 188, 143, 0.5); }
 
 /* Summary cards */
 .summary-cards {
@@ -832,6 +854,7 @@ tr.clickable { cursor: pointer; }
           <h3>Session (5hr)</h3>
           <div class="pct" id="session-pct">—</div>
           <div class="reset" id="session-reset">Reset: —</div>
+          <div class="forecast" id="session-forecast"></div>
         </div>
       </div>
       <div class="gauge-card">
@@ -846,6 +869,7 @@ tr.clickable { cursor: pointer; }
           <h3>Weekly (7 day)</h3>
           <div class="pct" id="weekly-pct">—</div>
           <div class="reset" id="weekly-reset">Reset: —</div>
+          <div class="forecast" id="weekly-forecast"></div>
         </div>
       </div>
       <div class="gauge-card" id="gauge-opus-card" style="display:none">
@@ -1121,6 +1145,44 @@ function escJsAttr(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
+// --- Forecast (per gauge) ---
+function fmtClock(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function updateForecast(id, fc) {
+  const el = document.getElementById(id + '-forecast');
+  if (!el) return;
+  if (!fc) {
+    el.innerHTML = '';
+    return;
+  }
+  const proj = fc.projected_pct;
+  const loPct = fc.lower_80_pct;
+  const hiPct = fc.upper_80_pct;
+  const conf = (fc.confidence || 'Low').toLowerCase();
+  const pillLabel = conf === 'medium' ? 'med' : conf;
+  let line1 = `<span class="fc-proj">Projected ${proj.toFixed(0)}% at reset</span>
+    <span class="fc-ci">(80% CI: ${loPct.toFixed(0)}%-${hiPct.toFixed(0)}%)</span><span class="fc-sep">·</span><span class="fc-conf-label">confidence</span><span class="fc-pill fc-pill-${conf}">${pillLabel}</span>`;
+  let line2 = '';
+  const etas = fc.etas || [];
+  for (const e of etas) {
+    if (!e.median) continue;
+    const med = fmtClock(e.median);
+    const loTime = fmtClock(e.lower);
+    const upTime = fmtClock(e.upper);
+    let range = '';
+    if (loTime && upTime) range = ` (${loTime}-${upTime})`;
+    else if (loTime) range = ` (>=${loTime})`;
+    line2 = `<div class="fc-eta">ETA to ${e.threshold_pct.toFixed(0)}%: ${med}${range}</div>`;
+    break;
+  }
+  el.innerHTML = line1 + line2;
+}
+
 // --- Gauges ---
 function updateGauge(id, pct, resetStr) {
   const circumference = 251.33;
@@ -1176,6 +1238,9 @@ function updateUsageGauges(data) {
   updateGauge('session', data.session_pct || 0, sessionSub);
   updateGauge('weekly', data.weekly_pct || 0, data.weekly_reset || '');
   updatePageTitle(data.session_pct || 0);
+  const fc = data.forecast || {};
+  updateForecast('session', fc.session);
+  updateForecast('weekly', fc.weekly);
 
   // Opus gauge
   const opusCard = document.getElementById('gauge-opus-card');

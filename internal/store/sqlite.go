@@ -78,6 +78,65 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("running migrations: %w", err)
 	}
+	if err := canonicalizeResetAts(db); err != nil {
+		return fmt.Errorf("canonicalizing reset_at: %w", err)
+	}
+	return nil
+}
+
+// canonicalizeResetAts rewrites any reset_at strings that aren't in the
+// canonical 1-minute-rounded UTC form. Idempotent — already-canonical rows
+// don't match the predicate. Necessary because pre-fix data has sub-second
+// drift across polls; see NormalizeResetAt for the why.
+func canonicalizeResetAts(db *sql.DB) error {
+	// Only touch rows whose reset_at isn't already canonical (length == 20 and
+	// ends in "Z" with ":00" seconds). Anything else gets read, normalized,
+	// written back.
+	rows, err := db.Query(`SELECT id, session_reset_at, weekly_reset_at FROM usage_snapshots
+		WHERE (session_reset_at != '' AND session_reset_at NOT GLOB '????-??-??T??:??:00Z')
+		   OR (weekly_reset_at  != '' AND weekly_reset_at  NOT GLOB '????-??-??T??:??:00Z')`)
+	if err != nil {
+		return err
+	}
+	type update struct {
+		id      int64
+		session string
+		weekly  string
+	}
+	var updates []update
+	for rows.Next() {
+		var id int64
+		var sess, wk string
+		if err := rows.Scan(&id, &sess, &wk); err != nil {
+			rows.Close()
+			return err
+		}
+		updates = append(updates, update{id, NormalizeResetAt(sess), NormalizeResetAt(wk)})
+	}
+	rows.Close()
+	if len(updates) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare(`UPDATE usage_snapshots SET session_reset_at = ?, weekly_reset_at = ? WHERE id = ?`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+	for _, u := range updates {
+		if _, err := stmt.Exec(u.session, u.weekly, u.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	log.Printf("[migrate] canonicalized %d reset_at rows", len(updates))
 	return nil
 }
 
@@ -89,7 +148,9 @@ func (s *Store) SaveUsageSnapshot(sessionPct, weeklyPct float64, sessionReset, w
 	_, err := s.db.Exec(
 		`INSERT INTO usage_snapshots (session_pct, weekly_pct, session_reset_at, weekly_reset_at, raw_json)
 		 VALUES (?, ?, ?, ?, ?)`,
-		sessionPct, weeklyPct, sessionReset, weeklyReset, string(rawJSON),
+		sessionPct, weeklyPct,
+		NormalizeResetAt(sessionReset), NormalizeResetAt(weeklyReset),
+		string(rawJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("saving usage snapshot: %w", err)
