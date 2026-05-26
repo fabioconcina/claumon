@@ -37,8 +37,8 @@ type Posterior struct {
 }
 
 // Forecast is the projected utilization at reset with its 80% CI. Lower and
-// Upper are clipped to [0, 1] for display; F is unclipped so ETA logic can
-// reason about it.
+// Upper are clipped to [uNow, 1] for display (utilization only grows within a
+// window); F is unclipped so ETA logic can reason about it.
 type Forecast struct {
 	F      float64 // point forecast at reset (unclipped)
 	SigmaF float64 // sqrt(rate-variance term + path-noise term)

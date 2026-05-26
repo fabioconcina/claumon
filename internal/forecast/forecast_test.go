@@ -85,6 +85,19 @@ func TestForecastCIClipping(t *testing.T) {
 	}
 }
 
+func TestForecastLowerBoundFlooredAtUNow(t *testing.T) {
+	// Small rate, wide variance: the raw Gaussian lower tail dips below uNow,
+	// which is unphysical (utilization within a window only grows). Lower must
+	// be floored at uNow, not at 0.
+	fc := ProjectForecast(0.06, 0.0, 1e-4, 5e-3, 126.0)
+	if fc.Lower < 0.06-1e-9 {
+		t.Errorf("lower bound should be floored at uNow=0.06, got %v", fc.Lower)
+	}
+	if fc.Upper <= 0.06 {
+		t.Errorf("upper bound should exceed uNow given positive sigma, got %v", fc.Upper)
+	}
+}
+
 func TestEstimatePosteriorFallsBackToPrior(t *testing.T) {
 	prior := Prior{Mu0: 0.05, Tau0Sq: 1e-3, NSessions: 5}
 	post := EstimatePosterior(nil, prior)

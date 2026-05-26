@@ -212,8 +212,10 @@ uncertainty is quadratic in horizon (dominates at long horizons), path noise
 is linear (dominates at short).
 
 \paragraph{80\% CI.} $[F - z_{0.9}\,\sigma_F,\ F + z_{0.9}\,\sigma_F]$,
-clipped to $[0, 1]$ for display. The unclipped $F$ is retained for ETA
-computation.
+clipped to $[\unow, 1]$ for display: utilization within a reset window is
+monotone non-decreasing, so the Gaussian left tail dipping below $\unow$ is
+unphysical and the displayed lower bound is floored at $\unow$. The unclipped
+$F$ is retained for ETA computation.
 
 \section{Calibration of $\sigsessionsq$}\label{sec:calib}
 
