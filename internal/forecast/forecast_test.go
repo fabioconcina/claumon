@@ -369,6 +369,98 @@ func TestCalibrationEndToEndMonotone(t *testing.T) {
 	}
 }
 
+func TestEffectiveRateVarTakesMax(t *testing.T) {
+	if got := EffectiveRateVar(1e-4, 5e-3); got != 5e-3 {
+		t.Errorf("expected floor to win, got %v", got)
+	}
+	if got := EffectiveRateVar(5e-3, 1e-4); got != 5e-3 {
+		t.Errorf("expected conjugate to win, got %v", got)
+	}
+	if got := EffectiveRateVar(1e-4, 0); got != 1e-4 {
+		t.Errorf("zero floor should be a no-op, got %v", got)
+	}
+}
+
+func TestRunAppliesBarTauSqFloor(t *testing.T) {
+	// Same scenario, same OLS posterior; the only difference is whether
+	// Calibration carries a BarTauSq. With the floor active, the CI must be
+	// wider.
+	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	reset := now.Add(3 * time.Hour)
+	base := now.Add(-30 * time.Minute)
+	in := Input{
+		Now:        now,
+		Reset:      reset,
+		UNow:       0.30,
+		Snapshots:  workedExampleSnapshots(base),
+		Prior:      Prior{Mu0: 0.080, Tau0Sq: 3.6e-3, NSessions: 20},
+		Thresholds: []float64{1.0},
+	}
+
+	in.Calibration = Calibration{SigmaSessionSq: 2.5e-3}
+	resNarrow, ok := Run(in, DefaultConfig())
+	if !ok {
+		t.Fatal("Run without floor failed")
+	}
+
+	in.Calibration = Calibration{SigmaSessionSq: 2.5e-3, BarTauSq: 3.6e-3}
+	resWide, ok := Run(in, DefaultConfig())
+	if !ok {
+		t.Fatal("Run with floor failed")
+	}
+
+	if resWide.Forecast.SigmaF <= resNarrow.Forecast.SigmaF {
+		t.Errorf("expected sigmaF to widen under floor: narrow=%v wide=%v",
+			resNarrow.Forecast.SigmaF, resWide.Forecast.SigmaF)
+	}
+	// Point forecast must be unchanged (floor affects spread only).
+	approxEq(t, "F unchanged", resWide.Forecast.F, resNarrow.Forecast.F, 1e-12, 1e-12)
+	// Worked example with bar_tau^2=3.6e-3 gives sigmaF ~ 0.20 (vs ~0.09 raw).
+	approxEq(t, "wide sigmaF", resWide.Forecast.SigmaF, 0.200, 0.02, 0.005)
+}
+
+func TestCalibrationStoresBHat(t *testing.T) {
+	// Generate synthetic sessions where the end-of-session error variance
+	// scales like b*delta^2 + a*delta with known a, b. The end-to-end
+	// CalibrateSigmaSession should recover bHat into BarTauSq.
+	const trueSigmaSq = 5e-4
+	const trueRateVar = 2e-3
+	prior := Prior{Mu0: 0.10, Tau0Sq: trueRateVar, NSessions: 40}
+	rng := newDetRNG(99)
+
+	var sessions []Session
+	for s := 0; s < 60; s++ {
+		start := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC).
+			Add(time.Duration(s) * 6 * time.Hour)
+		reset := start.Add(5 * time.Hour)
+		// Each session has its own r drawn from N(mu0, tau0Sq).
+		r := 0.10 + math.Sqrt(trueRateVar)*rng.norm()
+		snaps := []Snapshot{{Time: start, U: 0}}
+		for tt := start.Add(5 * time.Minute); !tt.After(reset); tt = tt.Add(5 * time.Minute) {
+			dt := tt.Sub(snaps[len(snaps)-1].Time).Hours()
+			inc := r*dt + math.Sqrt(trueSigmaSq*dt)*rng.norm()
+			if inc < 0 {
+				inc = 0
+			}
+			snaps = append(snaps, Snapshot{Time: tt, U: snaps[len(snaps)-1].U + inc})
+		}
+		sessions = append(sessions, Session{
+			Reset: reset, DurationHours: 5, UFinal: snaps[len(snaps)-1].U, Snapshots: snaps,
+		})
+	}
+
+	cal := CalibrateSigmaSession(sessions, prior, DefaultConfig(), 6, 30*time.Minute)
+	if cal.BarTauSq <= 0 {
+		t.Errorf("expected positive BarTauSq, got %v", cal.BarTauSq)
+	}
+	// Loose tolerance: regression has known finite-sample bias and the
+	// tau_post^2/delta covariance contamination the spec calls out.
+	if cal.BarTauSq < trueRateVar/4 || cal.BarTauSq > 4*trueRateVar {
+		t.Errorf("BarTauSq out of band: got %v, want within [%v, %v]",
+			cal.BarTauSq, trueRateVar/4, 4*trueRateVar)
+	}
+}
+
 // detRNG is a tiny xorshift64 generator with a Box-Muller wrapper, used only
 // in tests to keep them reproducible without pulling math/rand into a global
 // state.

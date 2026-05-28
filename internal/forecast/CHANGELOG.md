@@ -8,7 +8,28 @@ ETAs, or calibration semantics, the prior `MODEL.tex` (and its PDF) moves to
 Bug fixes that bring the implementation back in line with the existing spec
 do **not** bump the model version — only changes to the spec itself do.
 
-## v1.0 - 2026-05-28 (current)
+## v1.1 - 2026-05-28 (current)
+
+Fixes systematic CI under-spread observed in the field (live coverage on the
+80% CI was ~25% across all horizons, against a 80% target).
+
+- **§4 spread:** rate-uncertainty term changes from `Δt²·τ_post²` to
+  `Δt²·max(τ_post², bar_τ²)`. The historical-average rate variance `bar_τ²`
+  was previously computed during calibration and discarded; now it is kept
+  on `Calibration.BarTauSq` and used as a floor.
+- **§5 calibration:** the regression is unchanged, but `b_hat` is no longer
+  discarded - it becomes `bar_τ²`. Added a paragraph explaining why the
+  conjugate `τ_post²` under-spreads when assumption A1 (constant within-window
+  rate) is violated, and why `bar_τ²` is the right scale for the rest of the
+  session.
+- **§6 MC:** trajectory rate draws use the floored standard deviation
+  `sqrt(max(τ_post², bar_τ²))` to keep the MC consistent with §4.
+- **Diagnostics:** `Diagnostics` now reports `MeanE2`, `MeanPredVar`,
+  `UnderspreadX` (= MeanE2 / MeanPredVar; 1.0 is calibrated), `BarTauSq`,
+  `MeanTauPostSq`, and `MeanEffRateVar`. `Report()` prints a "Spread sanity"
+  block.
+
+## v1.0 - 2026-05-28
 
 Initial published model.
 

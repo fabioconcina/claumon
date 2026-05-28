@@ -19,6 +19,14 @@ type Diagnostics struct {
 	CoverageF80    float64 // fraction of replays where u_final fell in [F-, F+]
 	MAEFpct        float64 // mean absolute error of F (in percentage points)
 	BiasFpct       float64 // mean(F - u_final), pct points; +ve = over-predicting
+	// Spread sanity check: if mean_e2 / mean_predicted_variance >> 1, the
+	// 80% CI is too narrow; if << 1, it's too wide. Calibrated model -> ~1.
+	MeanE2         float64 // mean of (u_final - F)^2 across replays
+	MeanPredVar    float64 // mean of sigma_F^2 used by the forecast at each replay
+	UnderspreadX   float64 // MeanE2 / MeanPredVar; 1.0 means calibrated
+	MeanEffRateVar float64 // mean of EffectiveRateVar(tau_post^2, bar_tau^2)
+	MeanTauPostSq  float64 // mean of the conjugate tau_post^2 (pre-floor)
+	BarTauSq       float64 // calibration's bar tau^2 (the floor value)
 	// ETA
 	NETAFinite     int     // replays where the forecast emitted a finite median ETA AND threshold was crossed in reality
 	MAEEtaMin      float64 // mean abs error of MC median ETA vs actual crossing time, minutes
@@ -55,15 +63,19 @@ func Score(sessions []Session, prior Prior, cal Calibration, cfg Config, forecas
 	}
 	threshold := thresholdPct / 100
 
-	d := Diagnostics{ModelVersion: ModelVersion}
+	d := Diagnostics{ModelVersion: ModelVersion, BarTauSq: cal.BarTauSq}
 	var (
-		coveredF      int
-		sumAbsErr     float64
-		sumErr        float64
-		etaErrors     []float64 // minutes
-		etaSignedErr  []float64
-		etaCovered    int
-		etaCoverable  int
+		coveredF       int
+		sumAbsErr      float64
+		sumErr         float64
+		sumE2          float64
+		sumPredVar     float64
+		sumEffRateVar  float64
+		sumTauPostSq   float64
+		etaErrors      []float64 // minutes
+		etaSignedErr   []float64
+		etaCovered     int
+		etaCoverable   int
 	)
 
 	// 4 horizon bins, log-ish
@@ -109,13 +121,23 @@ func Score(sessions []Session, prior Prior, cal Calibration, cfg Config, forecas
 				continue
 			}
 
-			fc := ProjectForecast(uAtTf, post.RHat, post.TauPostSq, cal.SigmaSessionSq, deltaH)
+			rateVar := EffectiveRateVar(post.TauPostSq, cal.BarTauSq)
+			fc := ProjectForecast(uAtTf, post.RHat, rateVar, cal.SigmaSessionSq, deltaH)
 
 			// F coverage + error
 			d.NReplays++
 			errPct := (fc.F - s.UFinal) * 100
 			sumErr += errPct
 			sumAbsErr += math.Abs(errPct)
+			// Track e^2 (in fraction units) and the model's variance for the
+			// underspread ratio. SigmaF is the unclipped sqrt of the sum of
+			// rate-uncertainty and path-noise terms; squaring it gives the
+			// model variance the CI was built from.
+			eFrac := fc.F - s.UFinal
+			sumE2 += eFrac * eFrac
+			sumPredVar += fc.SigmaF * fc.SigmaF
+			sumEffRateVar += rateVar
+			sumTauPostSq += post.TauPostSq
 			covered := s.UFinal >= fc.Lower-1e-9 && s.UFinal <= fc.Upper+1e-9
 			if covered {
 				coveredF++
@@ -156,9 +178,17 @@ func Score(sessions []Session, prior Prior, cal Calibration, cfg Config, forecas
 	}
 
 	if d.NReplays > 0 {
-		d.CoverageF80 = float64(coveredF) / float64(d.NReplays)
-		d.MAEFpct = sumAbsErr / float64(d.NReplays)
-		d.BiasFpct = sumErr / float64(d.NReplays)
+		n := float64(d.NReplays)
+		d.CoverageF80 = float64(coveredF) / n
+		d.MAEFpct = sumAbsErr / n
+		d.BiasFpct = sumErr / n
+		d.MeanE2 = sumE2 / n
+		d.MeanPredVar = sumPredVar / n
+		if d.MeanPredVar > 0 {
+			d.UnderspreadX = d.MeanE2 / d.MeanPredVar
+		}
+		d.MeanEffRateVar = sumEffRateVar / n
+		d.MeanTauPostSq = sumTauPostSq / n
 	}
 	if d.NETAFinite > 0 {
 		d.MAEEtaMin = meanFloat(etaErrors)
@@ -220,6 +250,14 @@ func (d Diagnostics) Report() string {
 	fmt.Fprintf(&b, "  80%% CI coverage:    %s (want ~80%%)\n", pct(d.CoverageF80))
 	fmt.Fprintf(&b, "  MAE:                 %.2f pp\n", d.MAEFpct)
 	fmt.Fprintf(&b, "  bias (F - u*):       %+.2f pp\n", d.BiasFpct)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Spread sanity (mean across replays):")
+	fmt.Fprintf(&b, "  mean e^2:            %.3e\n", d.MeanE2)
+	fmt.Fprintf(&b, "  mean predicted var:  %.3e\n", d.MeanPredVar)
+	fmt.Fprintf(&b, "  underspread ratio:   %.2fx (1.0 = calibrated; >1 under-spread)\n", d.UnderspreadX)
+	fmt.Fprintf(&b, "  mean tau_post^2:     %.3e (conjugate, pre-floor)\n", d.MeanTauPostSq)
+	fmt.Fprintf(&b, "  bar tau^2 floor:     %.3e (from calibration b_hat)\n", d.BarTauSq)
+	fmt.Fprintf(&b, "  mean effective rateVar: %.3e (max of the two)\n", d.MeanEffRateVar)
 	if len(d.HorizonBins) > 0 {
 		fmt.Fprintln(&b, "  per-horizon coverage:")
 		for _, h := range d.HorizonBins {

@@ -85,7 +85,7 @@ func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, 
 	}
 	dt := horizon.Seconds() / float64(nSteps) / 3600.0
 	sigmaStep := math.Sqrt(cal.SigmaSessionSq * dt)
-	tauPost := math.Sqrt(math.Max(post.TauPostSq, 0))
+	tauPost := math.Sqrt(math.Max(EffectiveRateVar(post.TauPostSq, cal.BarTauSq), 0))
 
 	rng := rand.New(rand.NewSource(seedFrom(now, reset, uNow, post, cal, threshold)))
 
@@ -219,6 +219,8 @@ func seedFrom(now, reset time.Time, uNow float64, post Posterior, cal Calibratio
 	putU64(&buf, math.Float64bits(post.TauPostSq))
 	h.Write(buf[:])
 	putU64(&buf, math.Float64bits(cal.SigmaSessionSq))
+	h.Write(buf[:])
+	putU64(&buf, math.Float64bits(cal.BarTauSq))
 	h.Write(buf[:])
 	putU64(&buf, math.Float64bits(thr))
 	h.Write(buf[:])

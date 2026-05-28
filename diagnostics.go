@@ -71,8 +71,8 @@ func runDiagnostics() {
 		prior = prior2
 	}
 
-	fmt.Printf("gauge=%s sessions=%d mu0=%.4f tau0Sq=%.2e sigmaSessionSq=%.2e\n\n",
-		*gauge, prior.NSessions, prior.Mu0, prior.Tau0Sq, cal.SigmaSessionSq)
+	fmt.Printf("gauge=%s sessions=%d mu0=%.4f tau0Sq=%.2e sigmaSessionSq=%.2e barTauSq=%.2e\n\n",
+		*gauge, prior.NSessions, prior.Mu0, prior.Tau0Sq, cal.SigmaSessionSq, cal.BarTauSq)
 
 	d := forecast.Score(sessions, prior, cal, fcCfg, *perSession, 30*time.Minute, *threshold)
 	fmt.Print(d.Report())

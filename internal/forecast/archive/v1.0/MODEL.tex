@@ -48,7 +48,7 @@
 
 \title{Rate-Limit Forecast Model}
 \author{claumon \texttt{internal/forecast}}
-\date{Model version \textbf{v1.1} \enspace --- \enspace 2026-05-28}
+\date{Model version \textbf{v1.0} \enspace --- \enspace 2026-05-28}
 
 \begin{document}
 \maketitle
@@ -119,55 +119,6 @@ assumptions:
     draws from the same noise process. Required for the calibration in
     \S\ref{sec:calib}.
 \end{enumerate}
-
-\paragraph{On using Brownian motion for a monotone quantity.} Real
-utilization is monotone non-decreasing in $[0,1]$: tokens accumulate, the
-gauge only resets at the window boundary. A Brownian path can drift below
-$\unow$, above $1$, or below $0$, none of which can happen physically. We
-keep BM anyway because it yields a Gaussian forecast and closed-form
-$z$-quantile CIs; the principled alternative is a non-decreasing process
-(Gamma process: $u(t+s) - \unow \sim \mathrm{Gamma}(rs/\beta,\beta)$, or
-compound Poisson over individual API calls), at the cost of MC for the CI.
-
-\medskip
-The simplification has three concrete consequences:
-
-\begin{itemize}
-  \item \textbf{Unphysical lower tail.} $P\!\bigl(u(\tnow+s) < \unow\bigr)
-    = \Phi(-r\sqrt{s}/\sigma_{\text{session}})$. With representative
-    numbers ($r = 0.06\,\mathrm{h}^{-1}$, $\sigsessionsq = 2.5 \times
-    10^{-3}$) this is $\sim 2\%$ at $s = 3\,\mathrm{h}$ but $\sim 20\%$ at
-    $s = 30\,\mathrm{min}$. The display clip at $[\unow, 1]$
-    (\S\ref{sec:calib}) hides this in user-facing CIs, but the moments
-    are biased: the point forecast $F = \unow + \rpost\,\Dtrem$ is
-    \emph{slightly low} relative to the truncated-Gaussian mean, with the
-    bias worst at short horizons where the lower-tail mass is largest.
-  \item \textbf{MC ETAs biased late.} First-passage times in \S6 are
-    computed on raw BM paths that can dip below threshold and cross
-    later. A monotone process would cross sooner on those paths, so the
-    reported median ETA is conservatively late. Magnitude is bounded by
-    the same lower-tail probability above.
-  \item \textbf{Reinterpretation as forecast-error noise.} A defensible
-    reading is that $W(s)$ models the deviation of the realized
-    trajectory from the deterministic prediction $\unow + rs$, not literal
-    token movement. Under that reading $W(s) < 0$ means ``the user slowed
-    down relative to recent rate'', not ``tokens went down''. This is
-    consistent with how the calibration in \S\ref{sec:calib} fits $\hat
-    a$: against squared forecast errors, not squared step-to-step
-    increments.
-\end{itemize}
-
-\medskip
-The Brownian contribution to $\sigma_F^2$ is $\Dtrem\,\sigsessionsq$
-(linear), while the rate-uncertainty contribution from v1.1 is
-$\Dtrem^2 \cdot \max(\taupostsq, \bar\tau^2)$ (quadratic), so at long
-horizons BM is subdominant. If the new \texttt{UnderspreadX} diagnostic
-remains miscalibrated after v1.1 telemetry stabilises, replacing BM with a
-Gamma or compound-Poisson process is the natural next investigation.
-
-\paragraph{Visualisation note.} The forecast trajectory modal in the web
-UI draws the raw MC paths from \S6, which inherit the BM non-monotonicity
-and visibly dip. The dips disappear once a monotone process replaces BM.
 
 \section{Notation}
 
@@ -247,7 +198,7 @@ Limits: prior dominates when $\seols$ is large (early window); data
 dominates when $\seols$ is small (later in the window). For $n < 3$ the OLS
 step is undefined; use $\rpost = \mu_0$, $\taupostsq = \tauzerosq$.
 
-\section{Forecast distribution at reset}\label{sec:forecast}
+\section{Forecast distribution at reset}
 
 The point forecast is
 \[
@@ -255,29 +206,13 @@ The point forecast is
 \]
 By the law of total variance, conditioning on $r$:
 \[
-  \sigma_F^2 = \underbrace{\Dtrem^2 \cdot \max(\taupostsq,\, \bar\tau^2)}_{\text{rate uncertainty}}
-            + \underbrace{\Dtrem\,\sigsessionsq}_{\text{path noise}},
+  \sigma_F^2 = \underbrace{\Dtrem^2\,\taupostsq}_{\text{rate uncertainty}}
+            + \underbrace{\Dtrem\,\sigsessionsq}_{\text{path noise}}.
 \]
-where $\bar\tau^2$ is the historical-average rate variance recovered in
-\S\ref{sec:calib} (the quadratic coefficient of the §5 regression). The floor
-$\max(\taupostsq,\, \bar\tau^2)$ is new in v1.1 and corrects a systematic
-under-spread when assumption A1 (constant within-window rate) is violated:
-the conjugate $\taupostsq$ then accurately estimates uncertainty about the
-\emph{recent} slope but understates uncertainty about the
-\emph{end-of-session} slope, because the user pivots. The historical $\bar\tau^2$,
-fit from past end-of-session errors, is the right scale for the latter. We
-take the max rather than always using $\bar\tau^2$ because for short windows
-where $\taupostsq$ is large (few snapshots) the conjugate value should win.
-
-\paragraph{Status as a posterior.} The floor is a robustness correction
-rather than a Bayesian update: $\max(\taupostsq,\, \bar\tau^2)$ is not the
-variance of any coherent posterior over $r$, so $\sigma_F^2$ should be read
-as v1.0's predictive variance with $\taupostsq$ replaced by an empirical
-lower bound, not as the variance of a posterior predictive. The marginal
-forecast is still Gaussian (we draw $r$ from a Gaussian, then add Gaussian
-path noise), with two contributions at different scales: rate uncertainty
-is quadratic in horizon (dominates at long horizons), path noise is linear
-(dominates at short).
+Both contributions are Gaussian under the model, so $u(\Treset) \sim
+\mathcal{N}(F, \sigma_F^2)$. The two terms have different scaling: rate
+uncertainty is quadratic in horizon (dominates at long horizons), path noise
+is linear (dominates at short).
 
 \paragraph{80\% CI.} $[F - z_{0.9}\,\sigma_F,\ F + z_{0.9}\,\sigma_F]$,
 clipped to $[\unow, 1]$ for display: utilization within a reset window is
@@ -344,29 +279,18 @@ piece as an offset and regress the residual on $\delta_f$ alone; we keep
 the joint regression for simplicity and absorb the bias into the daily
 refit.
 
-\paragraph{Role of $\hat b$ (v1.1: kept as a floor).} Conceptually $\hat b$
-estimates the same quantity as $\taupostsq$ in \S\ref{sec:rate} (the rate
-variance relevant to predicting $u(\Treset)$), just as a historical average
-instead of a fresh per-forecast value. The original v1.0 design discarded
-$\hat b$ on the grounds that the per-forecast $\taupostsq$ uses today's
-actual snapshots and is therefore strictly more informative.
+\paragraph{Why $\hat b$ is discarded.} Conceptually $\hat b$ estimates the
+same quantity as $\taupostsq$ in \S\ref{sec:rate} (the rate-estimation
+variance), just as a historical average instead of a fresh per-forecast
+value. The per-forecast version in \S\ref{sec:rate} uses today's actual
+snapshots, so it is strictly more informative; $\hat b$ is redundant.
 
-In practice, on real sessions, $\taupostsq$ shrinks to one or two orders of
-magnitude below $\hat b$ within a few snapshots of OLS. Empirically, the
-$\hat b$-sized variance is the one that matches the realized end-of-session
-errors. The reason is assumption A1: $\taupostsq$ measures uncertainty in
-the \emph{recent} slope, which OLS can pin down precisely; but if the rate
-shifts mid-window, the slope governing the rest of the session has variance
-closer to the cross-session $\bar\tau^2$ than to today's $\taupostsq$.
-
-v1.1 therefore keeps $\hat b$ and stores it as $\bar\tau^2$ on the
-calibration. \S\ref{sec:forecast} uses $\max(\taupostsq,\, \bar\tau^2)$ in
-$\sigma_F^2$. The MC in \S6 likewise samples $r_k$ with standard deviation
-$\sqrt{\max(\taupostsq,\, \bar\tau^2)}$.
-
-The $b\,\delta_f^2$ term has to be present in the regression in any case:
-without it, the $\delta_f^2\,\bar\tau^2$ piece of $e_f^2$ has nowhere to go
-but $\hat a$, biasing it upward.
+The $b\,\delta_f^2$ term still has to be \emph{present in the regression},
+though. Without it, the $\delta_f^2\,\bar\tau^2$ piece of $e_f^2$ has
+nowhere to go but $\hat a$, biasing it upward. So $b$ is included as a
+nuisance parameter (analogous to adjusting for a confounder in a
+regression: we control for its contribution without caring about its fitted
+value), and discarded once $\hat a$ is clean.
 
 \paragraph{Floor and refit.} The floor on $\hat a$ guards against negative
 estimates from small samples (OLS does not enforce sign). Refit daily.
@@ -411,9 +335,8 @@ with random Gaussian drift has no tractable closed form. Simulate $K = 500$
 trajectories:
 
 \begin{lstlisting}
-tau_eff^2 = max(tau_post^2, bar_tau^2)     # v1.1 floor; see §4
 for k in 1..K:
-    r_k    = N(r_hat_post, tau_eff^2)      # may be negative; do NOT clip
+    r_k    = N(r_hat_post, tau_post^2)     # may be negative; do NOT clip
     u_k[0] = u_now
     for j in 1..M, dt = step size of jth bucket:
         u_k[j] = u_k[j-1] + r_k * dt + N(0, sigma_session^2 * dt)
@@ -518,35 +441,28 @@ $\mu_0 = 0.080\,\mathrm{h}^{-1}$, $\tauzerosq = 3.6 \times 10^{-3}$.
 Posterior: $\taupostsq \approx 6.19 \times 10^{-5}$, $\rpost \approx
 0.0633\,\mathrm{h}^{-1}$ (data dominates).
 
-Calibration: $\sigsessionsq = 2.5 \times 10^{-3}\,\mathrm{h}^{-1}$, $\bar\tau^2
-= 3.6 \times 10^{-3}\,\mathrm{h}^{-2}$ (approximately matches $\tauzerosq$ in a
-stable regime, as expected).
+Calibration: $\sigsessionsq = 2.5 \times 10^{-3}\,\mathrm{h}^{-1}$.
 
 Forecast:
 \[
   F = 0.30 + 0.0633 \cdot 3 \approx 0.490,
 \]
 \[
-  \max(\taupostsq,\, \bar\tau^2) = \max(6.19 \times 10^{-5},\, 3.6 \times 10^{-3})
-    = 3.6 \times 10^{-3} \quad \text{(floor active)},
-\]
-\[
-  \sigma_F^2 \approx 9 \cdot 3.6 \times 10^{-3}
+  \sigma_F^2 \approx 9 \cdot 6.19 \times 10^{-5}
     + 3 \cdot 2.5 \times 10^{-3}
-    \approx 3.24 \times 10^{-2} + 7.5 \times 10^{-3}
-    \approx 4.0 \times 10^{-2},
+    \approx 5.6 \times 10^{-4} + 7.5 \times 10^{-3}
+    \approx 8.1 \times 10^{-3},
 \]
 \[
-  \sigma_F \approx 0.200.
+  \sigma_F \approx 0.090.
 \]
 
-80\% CI: $[0.490 - 1.282 \cdot 0.200,\ 0.490 + 1.282 \cdot 0.200]
-\approx [0.234,\ 0.746]$. Display: ``Projected 49\% by reset (80\% CI:
-23\%--75\%)''.
+80\% CI: $[0.490 - 1.282 \cdot 0.090,\ 0.490 + 1.282 \cdot 0.090]
+\approx [0.375,\ 0.605]$. Display: ``Projected 49\% by reset (80\% CI:
+38\%--60\%)''.
 
-Rate uncertainty dominates path noise by $4.3\times$. The recent slope is
-locally well-estimated, but historically the rate has varied a lot across
-sessions, and the v1.1 floor honors that.
+Path noise dominates rate uncertainty by $13\times$. That is: we know the
+current slope well; the spread is ``you might pivot.''
 
 ETA to 100\%: gap is 0.70, deterministic crossing at $13{:}00 +
 0.70/0.0633 \approx 24{:}04$, far beyond reset. Returned as \texttt{nil}.

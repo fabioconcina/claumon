@@ -116,8 +116,8 @@ func (s *Service) Refit(gauge GaugeKind, now time.Time) bool {
 	s.mu.Lock()
 	s.states[gauge] = State{Prior: prior, Calibration: cal, FitAt: now}
 	s.mu.Unlock()
-	log.Printf("[forecast] %s: refit — sessions=%d mu0=%.4f tau0^2=%.2e sigma^2=%.2e",
-		gauge, prior.NSessions, prior.Mu0, prior.Tau0Sq, cal.SigmaSessionSq)
+	log.Printf("[forecast] %s: refit - sessions=%d mu0=%.4f tau0^2=%.2e sigma^2=%.2e barTau^2=%.2e",
+		gauge, prior.NSessions, prior.Mu0, prior.Tau0Sq, cal.SigmaSessionSq, cal.BarTauSq)
 	return true
 }
 
@@ -211,7 +211,8 @@ func (s *Service) SampleFor(gauge GaugeKind, resetAt string, uNowPct float64, no
 	fcSnaps := storeSnapsToForecast(snaps)
 	post := EstimatePosterior(filterRecent(fcSnaps, now, s.cfg.TauRecent), state.Prior)
 	deltaT := reset.Sub(now).Hours()
-	fc := ProjectForecast(uNow, post.RHat, post.TauPostSq, state.Calibration.SigmaSessionSq, deltaT)
+	rateVar := EffectiveRateVar(post.TauPostSq, state.Calibration.BarTauSq)
+	fc := ProjectForecast(uNow, post.RHat, rateVar, state.Calibration.SigmaSessionSq, deltaT)
 
 	threshold := thresholdPct / 100.0
 	mc, ok := SampleMC(now, reset, uNow, post, state.Calibration, threshold, s.cfg)

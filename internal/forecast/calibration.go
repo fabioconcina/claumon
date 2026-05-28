@@ -73,15 +73,21 @@ func CalibrateSigmaSession(sessions []Session, prior Prior, cfg Config, forecast
 		deltas[i] = p.delta
 		eSqs[i] = p.eSq
 	}
-	// Only the linear coefficient (path noise) is kept; the quadratic
-	// coefficient is a nuisance term that absorbs the rate-uncertainty
-	// contamination (§5). Don't simplify the regression to one coefficient,
-	// or the quadratic piece of e^2 will bias aHat upward.
-	aHat, _ := fitNoiseRegression(deltas, eSqs)
+	// aHat is the linear coefficient (path noise per hour). bHat is the
+	// quadratic coefficient: the historical-average rate variance per hour^2.
+	// Originally bHat was discarded (the per-forecast tau_post^2 was treated
+	// as strictly more informative), but in practice the conjugate update
+	// shrinks tau_post^2 well below bHat whenever the within-session rate is
+	// not truly constant, leading to severely under-spread CIs. We now keep
+	// bHat as a floor; see EffectiveRateVar.
+	aHat, bHat := fitNoiseRegression(deltas, eSqs)
 	if math.IsNaN(aHat) || math.IsInf(aHat, 0) || aHat < cfg.VarianceEps {
 		aHat = cfg.VarianceEps
 	}
-	return Calibration{SigmaSessionSq: aHat}
+	if math.IsNaN(bHat) || math.IsInf(bHat, 0) || bHat < 0 {
+		bHat = 0
+	}
+	return Calibration{SigmaSessionSq: aHat, BarTauSq: bHat}
 }
 
 // fitNoiseRegression fits z = a*x + b*x^2 with no intercept by OLS and returns

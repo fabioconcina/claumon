@@ -8,10 +8,10 @@ import "time"
 
 // ModelVersion identifies the math being implemented. Bump it whenever
 // MODEL.tex changes in a way that shifts forecast distributions, ETAs, or
-// calibration semantics — bug fixes that match the spec don't count. The
+// calibration semantics - bug fixes that match the spec don't count. The
 // CHANGELOG in MODEL.tex tracks what each bump means, and retired specs
 // live under internal/forecast/archive/<this-value>/.
-const ModelVersion = "v1.0"
+const ModelVersion = "v1.1"
 
 // Snapshot is one observed utilization point.
 type Snapshot struct {
@@ -27,10 +27,31 @@ type Prior struct {
 	NSessions int
 }
 
-// Calibration is the single scalar learned from history that controls path
-// noise: variance accumulated per hour of waiting.
+// Calibration carries the two scalars learned from history.
+// SigmaSessionSq is path-noise variance per hour (linear coefficient of the
+// §5 regression). BarTauSq is the historical-average rate variance per hour^2
+// (quadratic coefficient): used in §4 as a floor on the per-forecast
+// tau_post^2 when the conjugate update underestimates rate uncertainty (which
+// happens when the within-session rate isn't really constant, contradicting
+// assumption A1). Floor is applied at use sites; zero BarTauSq disables the
+// floor for backward-compat in tests that construct Calibration directly.
 type Calibration struct {
 	SigmaSessionSq float64 // (utilization)^2 per hour
+	BarTauSq       float64 // (utilization per hour)^2 historical avg rate variance
+}
+
+// EffectiveRateVar returns the rate variance to use for the forecast spread,
+// flooring the per-forecast tau_post^2 with the historical bar tau^2 from
+// calibration. See MODEL §4: when the within-session rate is not truly
+// constant the conjugate posterior systematically understates the rate
+// uncertainty relevant to predicting the end-of-session utilization. The
+// historical regression's b-hat is an unbiased estimator of that effective
+// uncertainty under the same generative model.
+func EffectiveRateVar(tauPostSq, barTauSq float64) float64 {
+	if barTauSq > tauPostSq {
+		return barTauSq
+	}
+	return tauPostSq
 }
 
 // Posterior is the result of combining OLS on the current window with the
@@ -164,7 +185,8 @@ func Run(in Input, cfg Config) (Result, bool) {
 	post := EstimatePosterior(recent, in.Prior)
 
 	deltaT := in.Reset.Sub(in.Now).Hours()
-	fc := ProjectForecast(in.UNow, post.RHat, post.TauPostSq, in.Calibration.SigmaSessionSq, deltaT)
+	rateVar := EffectiveRateVar(post.TauPostSq, in.Calibration.BarTauSq)
+	fc := ProjectForecast(in.UNow, post.RHat, rateVar, in.Calibration.SigmaSessionSq, deltaT)
 
 	etas := make(map[float64]*ETA, len(in.Thresholds))
 	for _, thr := range in.Thresholds {
