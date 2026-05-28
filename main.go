@@ -108,6 +108,9 @@ func main() {
 		case "service":
 			runService()
 			return
+		case "diagnostics":
+			runDiagnostics()
+			return
 		}
 	}
 
@@ -461,10 +464,12 @@ func (a *storeAdapter) GetCompletedSessions(gauge string, before time.Time, limi
 
 func buildUsageEvent(usage *api.UsageResponse) map[string]interface{} {
 	evt := map[string]interface{}{
-		"session_pct":   usage.SessionPercent,
-		"weekly_pct":    usage.WeeklyPercent,
-		"session_reset": formatDuration(usage.SessionResetDuration()),
-		"weekly_reset":  formatDuration(usage.WeeklyResetDuration()),
+		"session_pct":      usage.SessionPercent,
+		"weekly_pct":       usage.WeeklyPercent,
+		"session_reset":    formatDuration(usage.SessionResetDuration()),
+		"weekly_reset":     formatDuration(usage.WeeklyResetDuration()),
+		"session_reset_at": usage.SessionResetAt,
+		"weekly_reset_at":  usage.WeeklyResetAt,
 	}
 	if usage.WeeklySonnetPct != nil {
 		evt["weekly_sonnet_pct"] = *usage.WeeklySonnetPct

@@ -6,6 +6,13 @@ package forecast
 
 import "time"
 
+// ModelVersion identifies the math being implemented. Bump it whenever
+// MODEL.tex changes in a way that shifts forecast distributions, ETAs, or
+// calibration semantics — bug fixes that match the spec don't count. The
+// CHANGELOG in MODEL.tex tracks what each bump means, and retired specs
+// live under internal/forecast/archive/<this-value>/.
+const ModelVersion = "v1.0"
+
 // Snapshot is one observed utilization point.
 type Snapshot struct {
 	Time time.Time

@@ -48,14 +48,17 @@
 
 \title{Rate-Limit Forecast Model}
 \author{claumon \texttt{internal/forecast}}
-\date{}
+\date{Model version \textbf{v1.0} \enspace --- \enspace 2026-05-28}
 
 \begin{document}
 \maketitle
 
 This document specifies the math behind \texttt{internal/forecast}. It is
 normative: implementations must match the formulas here, and deviations are
-bugs unless this document is updated.
+bugs unless this document is updated. The model version above matches
+\texttt{forecast.ModelVersion} in the Go code; retired model versions are
+preserved under \texttt{internal/forecast/archive/v\textit{N}.\textit{M}/},
+and \texttt{CHANGELOG.md} summarises each bump.
 
 \section{What we forecast}
 

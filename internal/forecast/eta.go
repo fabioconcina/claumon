@@ -25,16 +25,57 @@ func EstimateETA(now, reset time.Time, uNow float64, post Posterior, cal Calibra
 		med, lo, up := now, now, now
 		return &ETA{Median: &med, Lower: &lo, Upper: &up}
 	}
+	if !reset.After(now) {
+		return nil
+	}
+	res, ok := runMC(now, reset, uNow, post, cal, threshold, cfg, false)
+	if !ok {
+		return nil
+	}
+	return summarizeETA(now, res)
+}
+
+// Samples is the full MC output, used by the visualization endpoint. Same
+// RNG seed and dynamics as EstimateETA.
+type Samples struct {
+	// StepHours is the size of one MC step in hours.
+	StepHours float64
+	// Trajectories holds K paths of length NSteps+1 each, starting at uNow.
+	// Empty when the caller asked for ETA only.
+	Trajectories [][]float64
+	// CrossingsH is the first-passage time (hours from now) for each
+	// trajectory that crossed within [now, reset]. Length <= K.
+	CrossingsH []float64
+	// PInf = (K - len(CrossingsH)) / K.
+	PInf float64
+	// NTraj = K.
+	NTraj int
+}
+
+// SampleMC runs §6 simulation and returns the full trajectories plus the
+// finite first-passage times. Reuses the same RNG seed as EstimateETA so the
+// summary derived here matches the cached forecast result.
+func SampleMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, threshold float64, cfg Config) (Samples, bool) {
+	if threshold <= uNow || !reset.After(now) {
+		return Samples{}, false
+	}
+	return runMC(now, reset, uNow, post, cal, threshold, cfg, true)
+}
+
+// runMC is the shared §6 core. collectTraj controls whether per-step values
+// are retained: EstimateETA passes false (allocates nothing extra),
+// SampleMC passes true.
+func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, threshold float64, cfg Config, collectTraj bool) (Samples, bool) {
+	cfg = cfg.withDefaults()
 	horizon := reset.Sub(now)
 	if horizon <= 0 {
-		return nil
+		return Samples{}, false
 	}
 
 	step := cfg.MCStep
 	if step <= 0 {
 		step = 5 * time.Minute
 	}
-	// Cap step at the full horizon so very short windows still run at least one step.
 	if step > horizon {
 		step = horizon
 	}
@@ -42,7 +83,7 @@ func EstimateETA(now, reset time.Time, uNow float64, post Posterior, cal Calibra
 	if nSteps < 1 {
 		nSteps = 1
 	}
-	dt := horizon.Seconds() / float64(nSteps) / 3600.0 // hours per step
+	dt := horizon.Seconds() / float64(nSteps) / 3600.0
 	sigmaStep := math.Sqrt(cal.SigmaSessionSq * dt)
 	tauPost := math.Sqrt(math.Max(post.TauPostSq, 0))
 
@@ -51,9 +92,19 @@ func EstimateETA(now, reset time.Time, uNow float64, post Posterior, cal Calibra
 	K := cfg.MCTraj
 	finite := make([]float64, 0, K)
 	infCount := 0
+	var trajectories [][]float64
+	if collectTraj {
+		trajectories = make([][]float64, K)
+	}
 
 	for k := 0; k < K; k++ {
 		rk := post.RHat + tauPost*rng.NormFloat64()
+
+		var path []float64
+		if collectTraj {
+			path = make([]float64, nSteps+1)
+			path[0] = uNow
+		}
 
 		u := uNow
 		var hitHours float64 = math.Inf(1)
@@ -64,17 +115,24 @@ func EstimateETA(now, reset time.Time, uNow float64, post Posterior, cal Calibra
 				noise = sigmaStep * rng.NormFloat64()
 			}
 			u = uPrev + rk*dt + noise
-			if u >= threshold {
-				// Linear interpolation between j-1 and j.
+			if collectTraj {
+				path[j] = u
+			}
+			if math.IsInf(hitHours, 1) && u >= threshold {
 				frac := 0.0
 				if u != uPrev {
 					frac = (threshold - uPrev) / (u - uPrev)
 				}
 				hitHours = (float64(j-1) + frac) * dt
-				break
+				if !collectTraj {
+					break
+				}
 			}
 		}
 
+		if collectTraj {
+			trajectories[k] = path
+		}
 		if math.IsInf(hitHours, 1) {
 			infCount++
 		} else {
@@ -82,17 +140,28 @@ func EstimateETA(now, reset time.Time, uNow float64, post Posterior, cal Calibra
 		}
 	}
 
-	pInf := float64(infCount) / float64(K)
-	if pInf >= 0.5 {
-		return &ETA{PInf: pInf}
-	}
+	return Samples{
+		StepHours:    dt,
+		Trajectories: trajectories,
+		CrossingsH:   finite,
+		PInf:         float64(infCount) / float64(K),
+		NTraj:        K,
+	}, true
+}
 
+// summarizeETA implements §6 reporting rules on a finished MC run.
+func summarizeETA(now time.Time, s Samples) *ETA {
+	if s.PInf >= 0.5 {
+		return &ETA{PInf: s.PInf}
+	}
+	finite := append([]float64(nil), s.CrossingsH...)
 	sort.Float64s(finite)
+	infCount := s.NTraj - len(finite)
 	medianHours := percentile(finite, 0.5, len(finite)+infCount)
 	medTime := now.Add(time.Duration(medianHours * float64(time.Hour)))
 
 	var lower, upper *time.Time
-	if pInf < 0.1 {
+	if s.PInf < 0.1 {
 		lh := percentile(finite, 0.1, len(finite))
 		uh := percentile(finite, 0.9, len(finite))
 		lt := now.Add(time.Duration(lh * float64(time.Hour)))
@@ -102,15 +171,8 @@ func EstimateETA(now, reset time.Time, uNow float64, post Posterior, cal Calibra
 		lh := percentile(finite, 0.1, len(finite))
 		lt := now.Add(time.Duration(lh * float64(time.Hour)))
 		lower = &lt
-		upper = nil
 	}
-
-	return &ETA{
-		Median: &medTime,
-		Lower:  lower,
-		Upper:  upper,
-		PInf:   pInf,
-	}
+	return &ETA{Median: &medTime, Lower: lower, Upper: upper, PInf: s.PInf}
 }
 
 // percentile returns the p-quantile of the sorted slice xs, treating sample

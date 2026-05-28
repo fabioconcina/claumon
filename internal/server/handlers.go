@@ -319,6 +319,69 @@ func (h *Handlers) HandleForecast(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
+// HandleForecastSample re-runs the MC for one gauge with trajectories
+// collected, and returns the materials needed by the visualization modal.
+// On-demand: only fires when the user clicks the projected-percent trigger.
+//
+// Query: ?gauge=session|weekly (required).
+func (h *Handlers) HandleForecastSample(w http.ResponseWriter, r *http.Request) {
+	if h.Forecast == nil {
+		writeJSON(w, map[string]interface{}{"available": false, "data": nil})
+		return
+	}
+	gaugeStr := r.URL.Query().Get("gauge")
+	var gauge forecast.GaugeKind
+	switch gaugeStr {
+	case "session":
+		gauge = forecast.GaugeSession
+	case "weekly":
+		gauge = forecast.GaugeWeekly
+	default:
+		writeJSONError(w, "gauge must be session or weekly", http.StatusBadRequest)
+		return
+	}
+
+	h.usageMu.RLock()
+	data := h.latestUsage
+	h.usageMu.RUnlock()
+	if data == nil {
+		writeJSON(w, map[string]interface{}{"available": false, "data": nil})
+		return
+	}
+
+	var resetAt string
+	var uNowPct float64
+	if gauge == forecast.GaugeSession {
+		resetAt, _ = data["session_reset_at"].(string)
+		if v, ok := data["session_pct"].(float64); ok {
+			uNowPct = v
+		}
+	} else {
+		resetAt, _ = data["weekly_reset_at"].(string)
+		if v, ok := data["weekly_pct"].(float64); ok {
+			uNowPct = v
+		}
+	}
+	if resetAt == "" {
+		writeJSON(w, map[string]interface{}{"available": false, "data": nil})
+		return
+	}
+
+	// 80% is the default UI threshold; matches the dim "ETA to 80%" text in the gauge.
+	const thresholdPct = 80.0
+	// 120 trajectories is enough for legible fog; histogram uses the full K.
+	const maxTraj = 120
+	// Cap each trajectory's length so weekly (~600 5-min steps) doesn't ship MB.
+	const maxSteps = 80
+
+	sample, ok := h.Forecast.SampleFor(gauge, resetAt, uNowPct, time.Now(), thresholdPct, maxTraj, maxSteps)
+	if !ok {
+		writeJSON(w, map[string]interface{}{"available": false, "data": nil})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"available": true, "data": sample})
+}
+
 func (h *Handlers) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if h.AuthProvider == nil {
 		writeJSON(w, map[string]string{"status": auth.AuthOK, "message": ""})

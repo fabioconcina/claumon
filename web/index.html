@@ -125,6 +125,62 @@ a:hover { text-decoration: underline; }
 .fc-pill-medium { color: var(--yellow); border-color: rgba(232, 200, 114, 0.5); }
 .fc-pill-high   { color: var(--green);  border-color: rgba(143, 188, 143, 0.5); }
 
+/* Forecast modal: clickable projected-pct text -> trajectory viz */
+.fc-proj-trigger { cursor: pointer; transition: color 0.15s; }
+.fc-proj-trigger:hover { color: var(--text-bright); }
+.fc-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.fc-modal-backdrop.open { display: flex; animation: fc-fade 0.18s ease-out; }
+@keyframes fc-fade { from { opacity: 0; } to { opacity: 1; } }
+.fc-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: min(640px, 94vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  animation: fc-slide 0.22s ease-out;
+}
+@keyframes fc-slide { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.fc-modal-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-modal-header h2 {
+  font-size: 13px; font-weight: 600; color: var(--text-bright);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.fc-modal-sub {
+  font-size: 10px; color: var(--text-dim); margin-top: 2px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+.fc-modal-close {
+  background: none; border: none; color: var(--text-dim);
+  font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px;
+}
+.fc-modal-close:hover { color: var(--text-bright); }
+.fc-modal-body { padding: 18px; }
+.fc-chart { width: 100%; height: auto; display: block; }
+.fc-foot {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex; justify-content: space-between; gap: 12px;
+}
+.fc-foot b { color: var(--text-bright); font-weight: 600; }
+.fc-empty { padding: 24px; text-align: center; color: var(--text-dim); font-size: 12px; }
+.fc-now-dot { animation: fc-pulse 1.8s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes fc-pulse {
+  0%, 100% { opacity: 1; r: 3.5; }
+  50% { opacity: 0.5; r: 5; }
+}
+
 /* Summary cards */
 .summary-cards {
   display: grid;
@@ -1165,7 +1221,7 @@ function updateForecast(id, fc) {
   const hiPct = fc.upper_80_pct;
   const conf = (fc.confidence || 'Low').toLowerCase();
   const pillLabel = conf === 'medium' ? 'med' : conf;
-  let line1 = `<span class="fc-proj">Projected ${proj.toFixed(0)}% at reset</span>
+  let line1 = `<span class="fc-proj fc-proj-trigger" onclick="openForecastModal('${id}')" title="Click for trajectory simulation">Projected ${proj.toFixed(0)}% at reset</span>
     <span class="fc-ci">(80% CI: ${loPct.toFixed(0)}%-${hiPct.toFixed(0)}%)</span><span class="fc-sep">·</span><span class="fc-conf-label">confidence</span><span class="fc-pill fc-pill-${conf}">${pillLabel}</span>`;
   let line2 = '';
   const etas = fc.etas || [];
@@ -2644,6 +2700,203 @@ setInterval(() => {
     }
   }).catch(() => {});
 }, 60000);
+
+// --- Forecast trajectory modal ---
+// Clicking "Projected X% at reset" calls openForecastModal(gauge), which
+// hits /api/forecast/sample?gauge=<gauge>. The server re-runs the §6 MC
+// with trajectories collected and ships them down. We render the fog +
+// empirical 10/90 band + posterior mean + first-passage histogram.
+
+(function ensureForecastModal() {
+  if (document.getElementById('fc-modal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="fc-modal-backdrop" id="fc-modal" onclick="if(event.target===this) closeForecastModal()">
+      <div class="fc-modal">
+        <div class="fc-modal-header">
+          <div>
+            <h2 id="fc-modal-title">Forecast</h2>
+            <div class="fc-modal-sub" id="fc-modal-sub"></div>
+          </div>
+          <button class="fc-modal-close" onclick="closeForecastModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="fc-modal-body" id="fc-modal-body"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeForecastModal();
+  });
+})();
+
+function openForecastModal(gauge) {
+  const modal = document.getElementById('fc-modal');
+  const title = document.getElementById('fc-modal-title');
+  const sub = document.getElementById('fc-modal-sub');
+  const body = document.getElementById('fc-modal-body');
+  title.textContent = (gauge === 'session' ? 'Session' : 'Weekly') + ' forecast';
+  sub.textContent = '';
+  body.innerHTML = '<div class="fc-empty">Sampling trajectories…</div>';
+  modal.classList.add('open');
+  fetch('/api/forecast/sample?gauge=' + encodeURIComponent(gauge))
+    .then(r => r.json())
+    .then(resp => {
+      if (!resp.available || !resp.data) {
+        body.innerHTML = '<div class="fc-empty">No forecast available yet.</div>';
+        return;
+      }
+      sub.textContent = 'model ' + (resp.data.model_version || '?');
+      body.innerHTML = '<svg class="fc-chart" id="fc-chart" viewBox="0 0 600 280" preserveAspectRatio="xMidYMid meet"></svg><div class="fc-foot" id="fc-foot"></div>';
+      renderForecastSample(resp.data);
+    })
+    .catch(err => {
+      body.innerHTML = '<div class="fc-empty">Failed to load forecast samples.</div>';
+      console.error('forecast sample fetch failed', err);
+    });
+}
+
+function closeForecastModal() {
+  const modal = document.getElementById('fc-modal');
+  if (modal) modal.classList.remove('open');
+}
+
+function renderForecastSample(d) {
+  const tStart = new Date(d.t_start).getTime();
+  const tNow   = new Date(d.t_now).getTime();
+  const tReset = new Date(d.t_reset).getTime();
+  const stepMs = d.step_hours * 3600 * 1000;
+
+  const w = 600, h = 280;
+  const padL = 36, padR = 14, padT = 14, padB = 28;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const x = t => padL + ((t - tStart) / (tReset - tStart)) * innerW;
+  const y = v => padT + (1 - v) * innerH;
+  const C = d.threshold_pct / 100;
+
+  let svg = '';
+
+  // y-axis: 0/50/100 only
+  for (const v of [0, 0.5, 1]) {
+    svg += `<line x1="${padL}" y1="${y(v)}" x2="${w - padR}" y2="${y(v)}" stroke="#3a3a3a" stroke-width="0.5" opacity="${v === 0 || v === 1 ? 1 : 0.5}"/>`;
+    svg += `<text x="${padL - 6}" y="${y(v) + 3}" text-anchor="end" font-size="10" fill="#7a6f65">${v*100}</text>`;
+  }
+  // x-axis: start / now / reset
+  const startClock = fcFmtClock(tStart);
+  for (const [t, lbl, col] of [[tStart, startClock, '#7a6f65'], [tNow, 'now', '#7a6f65'], [tReset, 'reset', '#da7756']]) {
+    svg += `<text x="${x(t)}" y="${h - padB + 14}" text-anchor="middle" font-size="10" fill="${col}">${lbl}</text>`;
+  }
+  svg += `<line x1="${x(tNow)}" y1="${padT}" x2="${x(tNow)}" y2="${h - padB}" stroke="#3a3a3a" stroke-width="0.5"/>`;
+  svg += `<line x1="${x(tReset)}" y1="${padT}" x2="${x(tReset)}" y2="${h - padB}" stroke="#da7756" stroke-width="0.5" opacity="0.5"/>`;
+
+  // threshold line
+  svg += `<line x1="${padL}" y1="${y(C)}" x2="${w - padR}" y2="${y(C)}" stroke="#e8c872" stroke-width="1" stroke-dasharray="3,3" opacity="0.55"/>`;
+  svg += `<text x="${w - padR}" y="${y(C) - 4}" text-anchor="end" font-size="9" fill="#e8c872">${d.threshold_pct.toFixed(0)}%</text>`;
+
+  // trajectories (fog)
+  const K = d.trajectories.length;
+  for (let k = 0; k < K; k++) {
+    const path = d.trajectories[k];
+    if (!path || path.length < 2) continue;
+    let pathD = `M ${x(tNow)} ${y(path[0])}`;
+    for (let j = 1; j < path.length; j++) {
+      pathD += ` L ${x(tNow + j * stepMs)} ${y(path[j])}`;
+    }
+    svg += `<path d="${pathD}" fill="none" stroke="#da7756" stroke-width="0.5" opacity="${Math.min(0.18, 20/K)}"/>`;
+  }
+
+  // empirical 10/90 of u at each step (column-wise)
+  const M = d.trajectories[0] ? d.trajectories[0].length : 0;
+  if (M > 0 && K > 0) {
+    const empP10 = new Float64Array(M);
+    const empP90 = new Float64Array(M);
+    const col = new Float64Array(K);
+    for (let j = 0; j < M; j++) {
+      for (let k = 0; k < K; k++) col[k] = d.trajectories[k][j];
+      const sorted = Array.from(col).sort((a, b) => a - b);
+      empP10[j] = sorted[Math.floor(0.10 * K)];
+      empP90[j] = sorted[Math.floor(0.90 * K)];
+    }
+    function empLine(arr) {
+      let dStr = '';
+      for (let j = 0; j < M; j++) {
+        dStr += (j === 0 ? 'M ' : ' L ') + x(tNow + j * stepMs) + ' ' + y(arr[j]);
+      }
+      return dStr;
+    }
+    svg += `<path d="${empLine(empP10)}" fill="none" stroke="#da7756" stroke-width="0.75" opacity="0.55"/>`;
+    svg += `<path d="${empLine(empP90)}" fill="none" stroke="#da7756" stroke-width="0.75" opacity="0.55"/>`;
+  }
+
+  // posterior mean E[u(t)]: straight line from (tNow, uNow) to (tReset, F)
+  svg += `<line x1="${x(tNow)}" y1="${y(d.u_now)}" x2="${x(tReset)}" y2="${y(d.f)}" stroke="#da7756" stroke-width="1.5"/>`;
+
+  // observed
+  if (d.observed && d.observed.length) {
+    let obsD = '';
+    d.observed.forEach((pt, i) => {
+      obsD += (i === 0 ? 'M ' : ' L ') + x(new Date(pt.t).getTime()) + ' ' + y(pt.u);
+    });
+    svg += `<path d="${obsD}" fill="none" stroke="#7dbfb8" stroke-width="1.8"/>`;
+  }
+
+  // first-passage histogram (quiet, anchored to threshold, growing upward)
+  const yC = y(C);
+  const nBins = 28;
+  const binMs = (tReset - tNow) / nBins;
+  const bins = new Array(nBins).fill(0);
+  const hits = d.crossings_h || [];
+  for (const hH of hits) {
+    const hMs = tNow + hH * 3600 * 1000;
+    const idx = Math.min(nBins - 1, Math.max(0, Math.floor((hMs - tNow) / binMs)));
+    bins[idx]++;
+  }
+  const maxBin = Math.max(...bins, 1);
+  const histPx = 9;
+  for (let i = 0; i < nBins; i++) {
+    if (bins[i] === 0) continue;
+    const barH = (bins[i] / maxBin) * histPx;
+    const xL = x(tNow + i * binMs);
+    const xR = x(tNow + (i + 1) * binMs);
+    const bw = Math.max(0.6, xR - xL - 0.8);
+    svg += `<rect x="${xL}" y="${yC - barH}" width="${bw}" height="${barH}" fill="#e8c872" opacity="0.16"/>`;
+  }
+  // MC median dot on threshold line
+  if (d.eta && d.eta.median) {
+    const mt = new Date(d.eta.median).getTime();
+    if (mt >= tNow && mt <= tReset) {
+      svg += `<circle cx="${x(mt)}" cy="${yC}" r="2.5" fill="#e8c872" stroke="#1a1a1a" stroke-width="1"/>`;
+    }
+  }
+
+  // u_now pulsing dot
+  svg += `<circle class="fc-now-dot" cx="${x(tNow)}" cy="${y(d.u_now)}" r="4" fill="#7dbfb8" stroke="#1a1a1a" stroke-width="1.5"/>`;
+
+  document.getElementById('fc-chart').innerHTML = svg;
+
+  // footer
+  const ciLo = Math.round(d.ci_lo * 100);
+  const ciHi = Math.round(d.ci_hi * 100);
+  const F = Math.round(d.f * 100);
+  let etaRange = '';
+  let etaCenter = '';
+  if (d.eta && d.eta.median) {
+    etaCenter = fcFmtClock(new Date(d.eta.median).getTime());
+    const lo = d.eta.lower ? fcFmtClock(new Date(d.eta.lower).getTime()) : '';
+    const up = d.eta.upper ? fcFmtClock(new Date(d.eta.upper).getTime()) : '';
+    if (lo && up) etaRange = `${lo}-${up}`;
+    else if (lo)  etaRange = `≥ ${lo}`;
+  }
+  document.getElementById('fc-foot').innerHTML = `
+    <span>Projected at reset: <b>${F}%</b> &middot; 80% CI ${ciLo}%-${ciHi}%</span>
+    ${etaCenter ? `<span>ETA to ${d.threshold_pct.toFixed(0)}%: <b>${etaCenter}</b> &middot; ${etaRange}</span>` : ''}
+  `;
+}
+
+function fcFmtClock(ms) {
+  const dt = new Date(ms);
+  return String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+}
 </script>
 </body>
 </html>

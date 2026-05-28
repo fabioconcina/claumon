@@ -174,6 +174,118 @@ func (s *Service) ForecastFor(gauge GaugeKind, resetAt string, uNowPct float64, 
 	return Run(in, s.cfg)
 }
 
+// SampleFor produces the materials for the forecast visualization modal:
+// re-runs MC with trajectories collected, fetches observed snapshots back to
+// the window start, and packages everything into a SamplePayload ready for
+// JSON encoding.
+//
+// maxTraj caps how many trajectories are returned; maxSteps caps the length
+// of each. When a trajectory is longer than maxSteps, it's strided so the
+// reported StepHours stays an integer multiple of the MC's step. CrossingsH
+// always covers the full K (it's small) so the histogram is unaffected.
+func (s *Service) SampleFor(gauge GaugeKind, resetAt string, uNowPct float64, now time.Time, thresholdPct float64, maxTraj, maxSteps int) (SamplePayload, bool) {
+	reset, err := time.Parse(time.RFC3339, resetAt)
+	if err != nil || !reset.After(now) {
+		return SamplePayload{}, false
+	}
+	state, ok := s.State(gauge)
+	if !ok {
+		return SamplePayload{}, false
+	}
+
+	dur := durationFor(gauge)
+	tStart := reset.Add(-dur)
+	uNow := uNowPct / 100.0
+
+	// Observed snapshots back to window start, plus a bit of slack so the
+	// recency window has data to fit OLS on.
+	since := tStart
+	if rec := now.Add(-2 * s.cfg.TauRecent); rec.Before(since) {
+		since = rec
+	}
+	snaps, err := s.st.GetWindowSnapshots(string(gauge), resetAt, since)
+	if err != nil {
+		log.Printf("[forecast] %s: sample load snapshots: %v", gauge, err)
+		return SamplePayload{}, false
+	}
+	fcSnaps := storeSnapsToForecast(snaps)
+	post := EstimatePosterior(filterRecent(fcSnaps, now, s.cfg.TauRecent), state.Prior)
+	deltaT := reset.Sub(now).Hours()
+	fc := ProjectForecast(uNow, post.RHat, post.TauPostSq, state.Calibration.SigmaSessionSq, deltaT)
+
+	threshold := thresholdPct / 100.0
+	mc, ok := SampleMC(now, reset, uNow, post, state.Calibration, threshold, s.cfg)
+	if !ok {
+		return SamplePayload{}, false
+	}
+	eta := summarizeETA(now, mc)
+
+	// Subsample trajectories with a uniform stride. Histogram (CrossingsH)
+	// uses the full sample.
+	traj := mc.Trajectories
+	if maxTraj > 0 && len(traj) > maxTraj {
+		stride := len(traj) / maxTraj
+		if stride < 1 {
+			stride = 1
+		}
+		sub := make([][]float64, 0, maxTraj)
+		for i := 0; i < len(traj); i += stride {
+			sub = append(sub, traj[i])
+			if len(sub) >= maxTraj {
+				break
+			}
+		}
+		traj = sub
+	}
+
+	// Subsample the time dimension too: long horizons (weekly) have ~600 steps
+	// at 5-min resolution which explodes the payload. Stride is chosen so the
+	// returned paths are uniformly spaced and the reported StepHours stays a
+	// clean integer multiple of the MC step. The frontend places each point j
+	// at tNow + j*effStep, so we don't keep a final unaligned point.
+	effStep := mc.StepHours
+	if maxSteps > 0 && len(traj) > 0 && len(traj[0]) > maxSteps+1 {
+		origLen := len(traj[0])
+		stride := (origLen - 1 + maxSteps - 1) / maxSteps // ceil((N-1)/M)
+		for i, p := range traj {
+			down := make([]float64, 0, maxSteps+1)
+			for j := 0; j < origLen; j += stride {
+				down = append(down, p[j])
+			}
+			traj[i] = down
+		}
+		effStep = mc.StepHours * float64(stride)
+	}
+
+	obs := make([]ObservedPoint, 0, len(fcSnaps))
+	for _, sn := range fcSnaps {
+		if sn.Time.Before(tStart) || sn.Time.After(now) {
+			continue
+		}
+		obs = append(obs, ObservedPoint{TimeISO: sn.Time.UTC().Format(time.RFC3339), U: sn.U})
+	}
+
+	out := SamplePayload{
+		ModelVersion: ModelVersion,
+		TStartISO:    tStart.UTC().Format(time.RFC3339),
+		TNowISO:      now.UTC().Format(time.RFC3339),
+		TResetISO:    reset.UTC().Format(time.RFC3339),
+		UNow:         uNow,
+		F:            fc.F,
+		CILo:         fc.Lower,
+		CIHi:         fc.Upper,
+		ThresholdPct: thresholdPct,
+		StepHours:    effStep,
+		Observed:     obs,
+		Trajectories: traj,
+		CrossingsH:   mc.CrossingsH,
+		PInf:         mc.PInf,
+		NTraj:        mc.NTraj,
+		ETA:          etaToPayload(thresholdPct, eta),
+	}
+	return out, true
+}
+
 func storeSnapsToForecast(ss []StoreSnapshot) []Snapshot {
 	out := make([]Snapshot, len(ss))
 	for i, s := range ss {
