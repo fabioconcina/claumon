@@ -1,27 +1,27 @@
-## Fixes
+## Forecast model → v1.2
 
-- **Forecast 80% CI was systematically under-spread.** Live monitoring
-  showed only ~25% of session outcomes falling inside the displayed band.
-  The §5 calibration regression was discarding its quadratic coefficient,
-  which carries the historical-average rate variance; v1.1 retains it and
-  uses it as a floor on the per-forecast rate uncertainty. CIs widen
-  accordingly, most visibly at long horizons.
-
-  Forecast model version → `v1.1`. The v1.0 spec is preserved under
-  [`internal/forecast/archive/v1.0/`](internal/forecast/archive/v1.0/);
-  the math change is documented in
+- **The projection interval was systematically over-spread.** The §5
+  calibration fit the path-noise variance with an unweighted regression of
+  squared errors, which is heteroskedastic: the few long-horizon points
+  dominated the fit and inflated the variance, so the 80% CI was wider than the
+  data warranted (and the over-subtraction silently pinned the rate prior).
+  v1.2 weights that regression by `1/Δt²`, which calibrates the spread and
+  revives the prior. Out-of-sample, the CI lands consistently closer to its 80%
+  target. The v1.1 spec is preserved under
+  [`internal/forecast/archive/v1.1/`](internal/forecast/archive/v1.1/); the
+  math is documented in
   [`internal/forecast/CHANGELOG.md`](internal/forecast/CHANGELOG.md).
 
-## Diagnostics
+- **Removed the Low/Medium/High confidence badge.** It scored how much recent
+  data the forecast had, not how reliable the forecast actually was, so it
+  could read "High" next to a wide interval and was uncorrelated with real
+  accuracy. The 80% CI already conveys the uncertainty.
 
-- `claumon diagnostics` now prints a "Spread sanity" block: mean squared
-  error of `F`, mean predicted variance, an underspread ratio
-  (`1.0` = calibrated, `> 1` = bands too narrow), and the components feeding
-  the new `EffectiveRateVar`. Use it after a few days of v1.1 data to check
-  the fix actually landed for your usage pattern.
+## New: `claumon bench`
 
-## Docs
-
-- Model spec §3 picks up a paragraph documenting the Brownian-motion
-  simplification (utilization is monotone, BM isn't) and the conditions
-  under which the bias matters.
+- An out-of-sample benchmark for the forecast model: leave-one-session-out and
+  temporal-holdout protocols, CRPS/pinball proper scoring with coverage, MAE,
+  and bias breakdowns, segmented by engagement and horizon. Datasets are
+  reproducible: frozen fixtures exported from any device's store
+  (`claumon bench export --db ...`) and seeded synthetic regimes. A development
+  and validation tool; it does not affect the dashboard.
