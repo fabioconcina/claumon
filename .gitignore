@@ -8,6 +8,11 @@ claumon.exe
 *.db-wal
 *.db-shm
 
+# Benchmark fixtures - contain real usage history, keep local, never commit.
+# (The golden synthetic set is generated in-test, so no fixture files belong in git.)
+bench-*.json
+testdata-bench-*.json
+
 # IDE
 .idea/
 .vscode/

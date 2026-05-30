@@ -111,6 +111,9 @@ func main() {
 		case "diagnostics":
 			runDiagnostics()
 			return
+		case "bench":
+			runBench()
+			return
 		}
 	}
 
