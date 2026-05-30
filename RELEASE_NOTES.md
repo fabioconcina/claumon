@@ -1,12 +1,15 @@
 ## Forecast model → v1.2
 
-- **The projection interval was systematically over-spread.** The §5
-  calibration fit the path-noise variance with an unweighted regression of
-  squared errors, which is heteroskedastic: the few long-horizon points
-  dominated the fit and inflated the variance, so the 80% CI was wider than the
-  data warranted (and the over-subtraction silently pinned the rate prior).
-  v1.2 weights that regression by `1/Δt²`, which calibrates the spread and
-  revives the prior. Out-of-sample, the CI lands consistently closer to its 80%
+- **The projection interval was over-spread - the complement of the v0.11.1
+  fix, not a reversal.** That release corrected an *under*-spread interval by
+  widening the **rate-uncertainty** term. This one corrects a *different*
+  component, the **path-noise** term: its §5 calibration fit the variance with
+  an unweighted regression of squared errors, which is heteroskedastic, so the
+  few long-horizon points dominated the fit and inflated it (and the
+  over-subtraction silently pinned the rate prior). On real data the over-spread
+  was path-dominated, so the two fixes touch orthogonal terms of the same
+  interval. v1.2 weights that regression by `1/Δt²`, calibrating the spread and
+  reviving the prior; net, out-of-sample coverage converges toward its 80%
   target. The v1.1 spec is preserved under
   [`internal/forecast/archive/v1.1/`](internal/forecast/archive/v1.1/); the
   math is documented in
