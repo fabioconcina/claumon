@@ -11,7 +11,7 @@ import "time"
 // calibration semantics - bug fixes that match the spec don't count. The
 // CHANGELOG in MODEL.tex tracks what each bump means, and retired specs
 // live under internal/forecast/archive/<this-value>/.
-const ModelVersion = "v1.1"
+const ModelVersion = "v1.2"
 
 // Snapshot is one observed utilization point.
 type Snapshot struct {
@@ -85,32 +85,11 @@ type ETA struct {
 	PInf   float64 // fraction of MC trajectories that never crossed
 }
 
-// Confidence is a coarse tag derived from effective sample size.
-type Confidence int
-
-const (
-	ConfLow Confidence = iota
-	ConfMedium
-	ConfHigh
-)
-
-func (c Confidence) String() string {
-	switch c {
-	case ConfHigh:
-		return "High"
-	case ConfMedium:
-		return "Medium"
-	default:
-		return "Low"
-	}
-}
-
 // Result bundles the per-gauge output of one forecast call.
 type Result struct {
-	Forecast   Forecast
-	Posterior  Posterior
-	ETAs       map[float64]*ETA // keyed by threshold (e.g. 1.0 for 100%)
-	Confidence Confidence
+	Forecast  Forecast
+	Posterior Posterior
+	ETAs      map[float64]*ETA // keyed by threshold (e.g. 1.0 for 100%)
 }
 
 // Config controls knobs the spec leaves as parameters. Use DefaultConfig and
@@ -119,8 +98,6 @@ type Config struct {
 	TauRecent   time.Duration // §3 recency window (default 30 min)
 	MCTraj      int           // §6 trajectories (default 500)
 	MCStep      time.Duration // §6 step size (default 5 min)
-	HighNEff    float64       // §7 (default 50)
-	MediumNEff  float64       // §7 (default 15)
 	VarianceEps float64       // floor for variance estimates (default 1e-6)
 }
 
@@ -129,8 +106,6 @@ func DefaultConfig() Config {
 		TauRecent:   30 * time.Minute,
 		MCTraj:      500,
 		MCStep:      5 * time.Minute,
-		HighNEff:    50,
-		MediumNEff:  15,
 		VarianceEps: 1e-6,
 	}
 }
@@ -145,12 +120,6 @@ func (c Config) withDefaults() Config {
 	}
 	if c.MCStep == 0 {
 		c.MCStep = d.MCStep
-	}
-	if c.HighNEff == 0 {
-		c.HighNEff = d.HighNEff
-	}
-	if c.MediumNEff == 0 {
-		c.MediumNEff = d.MediumNEff
 	}
 	if c.VarianceEps == 0 {
 		c.VarianceEps = d.VarianceEps
@@ -193,13 +162,10 @@ func Run(in Input, cfg Config) (Result, bool) {
 		etas[thr] = EstimateETA(in.Now, in.Reset, in.UNow, post, in.Calibration, thr, cfg)
 	}
 
-	tag := confidenceTag(post, in.Prior, cfg)
-
 	return Result{
-		Forecast:   fc,
-		Posterior:  post,
-		ETAs:       etas,
-		Confidence: tag,
+		Forecast:  fc,
+		Posterior: post,
+		ETAs:      etas,
 	}, true
 }
 
@@ -235,26 +201,6 @@ func filterRecent(all []Snapshot, now time.Time, tau time.Duration) []Snapshot {
 		}
 	}
 	return out
-}
-
-func confidenceTag(post Posterior, prior Prior, cfg Config) Confidence {
-	var nEff float64
-	if post.UsedOLS && post.SEolsSq > 0 {
-		nEff = prior.Tau0Sq/post.SEolsSq + float64(prior.NSessions)
-	} else {
-		nEff = float64(prior.NSessions)
-	}
-	if post.N > 0 && float64(post.N) < nEff {
-		nEff = float64(post.N)
-	}
-	switch {
-	case nEff >= cfg.HighNEff:
-		return ConfHigh
-	case nEff >= cfg.MediumNEff:
-		return ConfMedium
-	default:
-		return ConfLow
-	}
 }
 
 func clip01(x float64) float64 {

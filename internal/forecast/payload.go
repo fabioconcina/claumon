@@ -5,16 +5,15 @@ import "time"
 // Payload is the JSON-friendly per-gauge forecast snapshot. Times are
 // emitted as RFC3339 strings (or "" when nil). Percentages are 0-100.
 type Payload struct {
-	ModelVersion        string        `json:"model_version"`
-	ProjectedPct        float64       `json:"projected_pct"`
-	Lower80Pct          float64       `json:"lower_80_pct"`
-	Upper80Pct          float64       `json:"upper_80_pct"`
-	SigmaPct            float64       `json:"sigma_pct"`
-	RatePerHour         float64       `json:"rate_per_hour_pct"`
-	Confidence          string        `json:"confidence"`
-	UsedOLS             bool          `json:"used_ols"`
-	HorizonHours        float64       `json:"horizon_hours"`
-	ETAs                []ETAPayload  `json:"etas,omitempty"`
+	ModelVersion string       `json:"model_version"`
+	ProjectedPct float64      `json:"projected_pct"`
+	Lower80Pct   float64      `json:"lower_80_pct"`
+	Upper80Pct   float64      `json:"upper_80_pct"`
+	SigmaPct     float64      `json:"sigma_pct"`
+	RatePerHour  float64      `json:"rate_per_hour_pct"`
+	UsedOLS      bool         `json:"used_ols"`
+	HorizonHours float64      `json:"horizon_hours"`
+	ETAs         []ETAPayload `json:"etas,omitempty"`
 }
 
 // ETAPayload reports the first-passage forecast for one threshold (in 0-100
@@ -37,7 +36,6 @@ func (r Result) ToPayload(thresholdsPct []float64) Payload {
 		Upper80Pct:   r.Forecast.Upper * 100,
 		SigmaPct:     r.Forecast.SigmaF * 100,
 		RatePerHour:  r.Posterior.RHat * 100,
-		Confidence:   r.Confidence.String(),
 		UsedOLS:      r.Posterior.UsedOLS,
 		HorizonHours: r.Forecast.DeltaT,
 	}

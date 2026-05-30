@@ -250,30 +250,6 @@ func TestFitPriorNoiseCorrectionFloors(t *testing.T) {
 	}
 }
 
-func TestConfidenceTag(t *testing.T) {
-	cfg := DefaultConfig()
-
-	prior := Prior{Tau0Sq: 1e-3, NSessions: 60}
-	post := Posterior{N: 10, SEolsSq: 1e-5, UsedOLS: true}
-	// N_eff = min(10, 1e-3/1e-5 + 60) = min(10, 160) = 10 -> Low.
-	if tag := confidenceTag(post, prior, cfg); tag != ConfLow {
-		t.Errorf("expected Low (capped by n), got %v", tag)
-	}
-
-	post = Posterior{N: 200, SEolsSq: 1e-4, UsedOLS: true}
-	// N_eff = min(200, 1e-3/1e-4 + 60) = min(200, 70) = 70 -> High.
-	if tag := confidenceTag(post, prior, cfg); tag != ConfHigh {
-		t.Errorf("expected High, got %v", tag)
-	}
-
-	prior = Prior{Tau0Sq: 1e-3, NSessions: 5}
-	post = Posterior{N: 200, SEolsSq: 1e-3, UsedOLS: true}
-	// N_eff = min(200, 1 + 5) = 6 -> Low.
-	if tag := confidenceTag(post, prior, cfg); tag != ConfLow {
-		t.Errorf("expected Low, got %v", tag)
-	}
-}
-
 func TestRunSuppressedWhenPriorEmpty(t *testing.T) {
 	now := time.Now()
 	_, ok := Run(Input{

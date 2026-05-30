@@ -7,8 +7,9 @@ import (
 
 // CalibrateSigmaSession implements §5: replay the forecaster across past
 // completed sessions, collect (delta, e^2) pairs, and recover sigma_session^2
-// as the coefficient of delta in a joint no-intercept OLS of e^2 on
-// [delta, delta^2].
+// as the coefficient of delta in a joint no-intercept, horizon-weighted
+// (w = 1/delta^2) least-squares fit of e^2 on [delta, delta^2]. See
+// fitNoiseRegression for why the fit is weighted.
 //
 // forecastsPerSession (default 6) controls how many replay points are sampled
 // per session, uniformly between the earliest feasible forecast time
@@ -90,31 +91,46 @@ func CalibrateSigmaSession(sessions []Session, prior Prior, cfg Config, forecast
 	return Calibration{SigmaSessionSq: aHat, BarTauSq: bHat}
 }
 
-// fitNoiseRegression fits z = a*x + b*x^2 with no intercept by OLS and returns
-// (a, b). Used by §5 to separate the linear path-noise term from the
-// quadratic rate-uncertainty term. NaN is returned for both coefficients when
-// the design matrix is singular.
+// fitNoiseRegression fits z = a*x + b*x^2 with no intercept by weighted least
+// squares (weight w = 1/x^2) and returns (a, b). Used by §5 to separate the
+// linear path-noise term from the quadratic rate-uncertainty term. NaN is
+// returned for both coefficients when the design matrix is singular.
+//
+// The weighting corrects heteroskedasticity: here z is a squared forecast
+// error e^2, whose own variance scales as (E[e^2])^2 and so grows steeply with
+// the horizon x. Unweighted OLS is then dominated by the few large-x points
+// and inflates the linear coefficient a, over-predicting variance at short
+// horizons by an order of magnitude (and, downstream, over-subtracting in the
+// FitPrior noise correction until tau_0^2 floors out). Weighting by 1/x^2 is a
+// fixed proxy for 1/Var[e^2] that puts the short- and long-horizon points on a
+// comparable scale; the quadratic term b stays identified by the long-horizon
+// points (only they carry information about x^2). See MODEL §5.
+//
+// With w = 1/x^2 the normal equations for minimizing sum w*(z - a*x - b*x^2)^2
+// collapse to: a*n + b*Sx = S(z/x); a*Sx + b*Sxx = Sz.
 func fitNoiseRegression(xs, zs []float64) (float64, float64) {
 	if len(xs) != len(zs) || len(xs) < 2 {
 		return math.NaN(), math.NaN()
 	}
-	var sxx, sxy, syy, szx, szy float64
+	var n, sx, sxx, szOverX, sz float64
 	for i := range xs {
 		x := xs[i]
-		y := x * x
+		if x <= 0 {
+			continue // x is a remaining horizon in hours; always > 0 in replay
+		}
 		z := zs[i]
+		n++
+		sx += x
 		sxx += x * x
-		sxy += x * y
-		syy += y * y
-		szx += z * x
-		szy += z * y
+		szOverX += z / x
+		sz += z
 	}
-	det := sxx*syy - sxy*sxy
+	det := n*sxx - sx*sx
 	if det == 0 {
 		return math.NaN(), math.NaN()
 	}
-	aHat := (szx*syy - szy*sxy) / det
-	bHat := (sxx*szy - sxy*szx) / det
+	aHat := (szOverX*sxx - sz*sx) / det
+	bHat := (n*sz - sx*szOverX) / det
 	return aHat, bHat
 }
 

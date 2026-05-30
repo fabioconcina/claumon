@@ -8,7 +8,32 @@ ETAs, or calibration semantics, the prior `MODEL.tex` (and its PDF) moves to
 Bug fixes that bring the implementation back in line with the existing spec
 do **not** bump the model version — only changes to the spec itself do.
 
-## v1.1 - 2026-05-28 (current)
+## v1.2 - 2026-05-30 (current)
+
+Two changes, both informed by the out-of-sample benchmark added in
+`internal/forecast/bench` (LOSO + temporal holdout, CRPS/pinball scoring,
+synthetic golden regimes).
+
+- **Calibration regression is now weighted.** The joint fit of `e_f²` on
+  `[δ, δ²]` uses weights `w = 1/δ²` instead of plain OLS. `e_f²` is a squared
+  error and so heteroskedastic (its variance grows steeply with horizon);
+  unweighted OLS was dominated by the few long-horizon points and inflated
+  `σ_session²` by ~8×. That over-predicted short-horizon spread and, through
+  the §5 prior noise correction, over-subtracted until `tau0Sq` floored to ε,
+  silently pinning the rate prior. The weighted fit calibrates the spread
+  (in-sample underspread ratio 0.34 → 0.97) and revives the prior; `bar_τ²`
+  comes from the same fit. Head-to-head on real exports: net-better CRPS and
+  consistently closer-to-80% coverage, strongest on the higher-engagement
+  device.
+- **Confidence tag removed.** The `Low/Medium/High` tag (former §9), its API
+  field (`confidence`), the `Config.HighNEff`/`MediumNEff` knobs, and the UI
+  badge are all dropped. The tag scored the amount of recent-slope evidence
+  (`N_eff`), which the benchmark showed is uncorrelated — often
+  anti-correlated — with forecast quality (a precise recent slope is frequently
+  a confidently biased one). The 80% CI already conveys predictive uncertainty;
+  a miscalibrated badge only added noise. The output set in §1 loses the tag.
+
+## v1.1 - 2026-05-28
 
 Fixes systematic CI under-spread observed in the field (live coverage on the
 80% CI was ~25% across all horizons, against a 80% target).

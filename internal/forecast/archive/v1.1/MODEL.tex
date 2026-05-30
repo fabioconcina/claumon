@@ -48,7 +48,7 @@
 
 \title{Rate-Limit Forecast Model}
 \author{claumon \texttt{internal/forecast}}
-\date{Model version \textbf{v1.2} \enspace --- \enspace 2026-05-30}
+\date{Model version \textbf{v1.1} \enspace --- \enspace 2026-05-28}
 
 \begin{document}
 \maketitle
@@ -73,6 +73,7 @@ forecaster reads the time series of utilization snapshots and produces:
   \item For each threshold $\Cthr$ (e.g.\ 100\%), either a median ETA with an
     80\% CI, or \texttt{nil} if the threshold is unlikely to be reached
     before reset.
+  \item A confidence tag in $\{\text{Low}, \text{Medium}, \text{High}\}$.
 \end{enumerate}
 
 This procedure is an \emph{empirical Bayes} forecast: the prior on the rate
@@ -322,27 +323,16 @@ lets us separate them. Naive averaging like $\sigsessionsq \approx
 \mathrm{mean}_f(e_f^2 / \delta_f)$ would not separate them and would bias
 the estimate upward by a $\delta_f\,\bar\tau^2$ contamination.
 
-\paragraph{Joint regression (v1.2: weighted).} Fit both unknowns by
-\emph{weighted} least squares of $e_f^2$ on $[\delta_f,\, \delta_f^2]$ (no
-intercept), with weights $w_f = 1/\delta_f^2$:
+\paragraph{Joint regression.} Fit both unknowns by OLS of $e_f^2$ on
+$[\delta_f,\, \delta_f^2]$ (no intercept):
 \[
   (\hat a, \hat b)
-    = \arg\min_{a, b} \sum_f w_f\bigl(e_f^2 - a\,\delta_f - b\,\delta_f^2\bigr)^2,
+    = \arg\min_{a, b} \sum_f \bigl(e_f^2 - a\,\delta_f - b\,\delta_f^2\bigr)^2,
   \qquad
   \sigsessionsq := \max(\hat a,\, 10^{-6}).
 \]
 The coefficient $\hat a$ on the linear term is the per-hour path-noise
-variance: that is the quantity we want. The weighting corrects
-heteroskedasticity: $e_f^2$ is a squared error whose own variance scales as
-$(\mathbb{E}[e_f^2])^2$ and so grows steeply with $\delta_f$, so the unweighted
-OLS of v1.0--v1.1 was dominated by the few long-horizon points and inflated
-$\hat a$ --- over-predicting short-horizon spread by roughly an order of
-magnitude, and (through the noise correction in \S\ref{sec:rate})
-over-subtracting until $\tauzerosq$ floored to $\varepsilon$, which silently
-pinned the rate prior. Weighting by $1/\delta_f^2$ is a fixed proxy for
-$1/\mathrm{Var}[e_f^2]$ that puts short- and long-horizon residuals on a
-comparable scale; the quadratic term $\hat b$ stays identified because only the
-long-horizon points carry information about $\delta_f^2$.
+variance: that is the quantity we want.
 
 Note that this regression treats $\bar\tau^2$ as constant across forecast
 points, while in reality $\taupostsq(t_f)$ varies (it depends on how many
@@ -453,6 +443,28 @@ as larger than any finite value):
 
 RNG seed derived from $(\tnow,\, \Treset,\, \unow,\, \rpost,\, \taupostsq,\,
 \sigsessionsq)$ for test reproducibility.
+
+\section{Confidence tag}
+
+Summarises the effective amount of evidence:
+\[
+  N_{\text{eff}} = \min\!\left(n,\
+    \frac{\tauzerosq}{\seolssq} + \lvert\mathcal{S}\rvert\right).
+\]
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Tag & Threshold \\
+\midrule
+High   & $N_{\text{eff}} \geq 50$ \\
+Medium & $15 \leq N_{\text{eff}} < 50$ \\
+Low    & $N_{\text{eff}} < 15$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Thresholds are heuristics; revisit after seeing real values.
 
 \section{Edge cases}
 

@@ -106,24 +106,6 @@ a:hover { text-decoration: underline; }
 .gauge-info .forecast .fc-proj { color: var(--text-dim); }
 .gauge-info .forecast .fc-ci { color: var(--text-dim); opacity: 0.8; }
 .gauge-info .forecast .fc-eta { color: var(--text-dim); margin-top: 1px; }
-.fc-sep { color: var(--text-dim); opacity: 0.5; margin: 0 6px; }
-.fc-conf-label { color: var(--text-dim); opacity: 0.8; }
-.fc-pill {
-  display: inline-block;
-  font-size: 8px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 0 5px;
-  border-radius: 6px;
-  margin-left: 4px;
-  vertical-align: 1px;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  background: transparent;
-}
-.fc-pill-medium { color: var(--yellow); border-color: rgba(232, 200, 114, 0.5); }
-.fc-pill-high   { color: var(--green);  border-color: rgba(143, 188, 143, 0.5); }
 
 /* Forecast modal: clickable projected-pct text -> trajectory viz */
 .fc-proj-trigger { cursor: pointer; transition: color 0.15s; }
@@ -1219,10 +1201,8 @@ function updateForecast(id, fc) {
   const proj = fc.projected_pct;
   const loPct = fc.lower_80_pct;
   const hiPct = fc.upper_80_pct;
-  const conf = (fc.confidence || 'Low').toLowerCase();
-  const pillLabel = conf === 'medium' ? 'med' : conf;
   let line1 = `<span class="fc-proj fc-proj-trigger" onclick="openForecastModal('${id}')" title="Click for trajectory simulation">Projected ${proj.toFixed(0)}% at reset</span>
-    <span class="fc-ci">(80% CI: ${loPct.toFixed(0)}%-${hiPct.toFixed(0)}%)</span><span class="fc-sep">·</span><span class="fc-conf-label">confidence</span><span class="fc-pill fc-pill-${conf}">${pillLabel}</span>`;
+    <span class="fc-ci">(80% CI: ${loPct.toFixed(0)}%-${hiPct.toFixed(0)}%)</span>`;
   let line2 = '';
   const etas = fc.etas || [];
   for (const e of etas) {
