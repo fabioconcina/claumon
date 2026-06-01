@@ -2579,14 +2579,18 @@ function connectSSE() {
   es.onopen = () => {
     sseConnected = true;
     sseRetryDelay = 2;
-    document.getElementById('statusDot').classList.add('connected');
+    const dot = document.getElementById('statusDot');
+    dot.classList.add('connected');
+    dot.title = 'SSE connected';
     document.getElementById('connStatus').textContent = 'Connected';
     fetchAll();
   };
 
   es.onerror = () => {
     sseConnected = false;
-    document.getElementById('statusDot').classList.remove('connected');
+    const dot = document.getElementById('statusDot');
+    dot.classList.remove('connected');
+    dot.title = 'SSE disconnected';
     document.getElementById('connStatus').textContent = 'Reconnecting...';
     if (es.readyState === EventSource.CLOSED) {
       const delay = Math.min(sseRetryDelay * 1000, 60000);
