@@ -650,25 +650,6 @@ type SessionAggregate struct {
 	MessageCount      int     `json:"message_count"`
 }
 
-// AggregateSessions sums token counts, costs, and session/message counts.
-func AggregateSessions(sessions []*SessionSummary) SessionAggregate {
-	var agg SessionAggregate
-	seen := make(map[string]bool)
-	for _, s := range sessions {
-		agg.InputTokens += s.InputTokens
-		agg.OutputTokens += s.OutputTokens
-		agg.CacheReadTokens += s.CacheReadTokens
-		agg.CacheCreateTokens += s.CacheCreateTokens
-		agg.CostUSD += s.EstimatedCostUSD
-		agg.MessageCount += s.MessageCount
-		if !seen[s.ID] {
-			seen[s.ID] = true
-			agg.SessionCount++
-		}
-	}
-	return agg
-}
-
 // contentBlock represents a single block in a Claude message content array.
 type contentBlock struct {
 	Type      string          `json:"type"`

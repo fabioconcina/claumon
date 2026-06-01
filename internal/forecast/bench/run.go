@@ -275,20 +275,6 @@ func abs(x float64) float64 {
 	return x
 }
 
-// Report prints the overall table only, sorted by CRPS (best first).
-func Report(datasetName, protocol string, ms []Metrics) string {
-	sorted := append([]Metrics(nil), ms...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].CRPS < sorted[j].CRPS })
-	var b strings.Builder
-	fmt.Fprintf(&b, "benchmark: %s   protocol: %s\n", datasetName, protocol)
-	header(&b, "strategy")
-	for _, m := range sorted {
-		row(&b, m.Strategy, m)
-	}
-	fmt.Fprintln(&b, "  (CRPS/pinball: lower better; skill>0 beats climatology; cov80 wants ~80%)")
-	return b.String()
-}
-
 // ReportSegmented prints each strategy with its per-segment breakdown,
 // strategies ordered by overall CRPS.
 func ReportSegmented(datasetName, protocol string, rs []StrategyResult) string {

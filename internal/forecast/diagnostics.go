@@ -3,7 +3,6 @@ package forecast
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 )
@@ -191,8 +190,8 @@ func Score(sessions []Session, prior Prior, cal Calibration, cfg Config, forecas
 		d.MeanTauPostSq = sumTauPostSq / n
 	}
 	if d.NETAFinite > 0 {
-		d.MAEEtaMin = meanFloat(etaErrors)
-		d.BiasEtaMin = meanFloat(etaSignedErr)
+		d.MAEEtaMin = mean(etaErrors)
+		d.BiasEtaMin = mean(etaSignedErr)
 	}
 	if etaCoverable > 0 {
 		d.CoverageEta80 = float64(etaCovered) / float64(etaCoverable)
@@ -226,17 +225,6 @@ func firstCrossing(snaps []Snapshot, threshold float64, tStart time.Time) (float
 		}
 	}
 	return 0, false
-}
-
-func meanFloat(xs []float64) float64 {
-	if len(xs) == 0 {
-		return 0
-	}
-	var s float64
-	for _, x := range xs {
-		s += x
-	}
-	return s / float64(len(xs))
 }
 
 // Report formats the diagnostics for terminal display.
@@ -287,10 +275,3 @@ func (d Diagnostics) Report() string {
 }
 
 func pct(f float64) string { return fmt.Sprintf("%.1f%%", f*100) }
-
-// SortedHorizons is a small helper for ad-hoc plotting/printing of bins.
-func (d Diagnostics) SortedHorizons() []HorizonBin {
-	out := append([]HorizonBin(nil), d.HorizonBins...)
-	sort.Slice(out, func(i, j int) bool { return out[i].HoursLow < out[j].HoursLow })
-	return out
-}

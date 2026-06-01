@@ -139,6 +139,9 @@ type Session struct {
 }
 
 func mean(xs []float64) float64 {
+	if len(xs) == 0 {
+		return 0
+	}
 	var s float64
 	for _, x := range xs {
 		s += x

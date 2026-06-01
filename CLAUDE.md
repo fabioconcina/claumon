@@ -5,11 +5,17 @@ Real-time Claude Code dashboard — single binary, zero config. Monitors API usa
 ## Build & Test
 
 ```bash
-make build          # builds ./claumon with version from git tags
-make test           # go test -v -race -count=1 ./...
-make vet            # go vet ./...
-./claumon --open    # run and open browser
+make build            # builds ./claumon with version from git tags
+make build-benchtools # build including the dev-only bench/diagnostics subcommands
+make test             # go test -v -race -count=1 ./...
+make vet              # go vet ./...
+./claumon --open      # run and open browser
 ```
+
+The `bench` and `diagnostics` subcommands (forecast model benchmarking and
+calibration replay) are gated behind the `benchtools` build tag, so they are
+excluded from release binaries. Use `make build-benchtools` (or
+`go build -tags benchtools .`) to enable them locally.
 
 ## Architecture
 

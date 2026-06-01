@@ -26,6 +26,19 @@ func pctToFraction(p float64) float64 {
 	return p / 100.0
 }
 
+// gaugeColumns maps a gauge ("session" or "weekly") to its percent and
+// reset-at column names in usage_snapshots.
+func gaugeColumns(gauge string) (pctCol, resetCol string, err error) {
+	switch gauge {
+	case "session":
+		return "session_pct", "session_reset_at", nil
+	case "weekly":
+		return "weekly_pct", "weekly_reset_at", nil
+	default:
+		return "", "", fmt.Errorf("unknown gauge: %s", gauge)
+	}
+}
+
 // canonicalResetLayout is the canonical form for reset_at strings stored in
 // the DB: zero fractional seconds, UTC zone. All snapshots from one window
 // land on the same string so GROUP BY matches.
@@ -66,14 +79,9 @@ func NormalizeResetAt(s string) string {
 // window across polls. If the format ever drifts mid-window (e.g. trailing
 // "Z" vs "+00:00"), windows will split; normalize at write time to harden.
 func (s *Store) GetWindowSnapshots(gauge, resetAt string, since time.Time) ([]ForecastSnapshot, error) {
-	var pctCol, resetCol string
-	switch gauge {
-	case "session":
-		pctCol, resetCol = "session_pct", "session_reset_at"
-	case "weekly":
-		pctCol, resetCol = "weekly_pct", "weekly_reset_at"
-	default:
-		return nil, fmt.Errorf("unknown gauge: %s", gauge)
+	pctCol, resetCol, err := gaugeColumns(gauge)
+	if err != nil {
+		return nil, err
 	}
 
 	q := fmt.Sprintf(`SELECT timestamp, %s FROM usage_snapshots
@@ -108,14 +116,9 @@ func (s *Store) GetWindowSnapshots(gauge, resetAt string, since time.Time) ([]Fo
 //
 // Newest sessions come first. limit caps the count (0 means no limit).
 func (s *Store) GetCompletedSessions(gauge string, before time.Time, limit int) ([]ForecastSession, error) {
-	var pctCol, resetCol string
-	switch gauge {
-	case "session":
-		pctCol, resetCol = "session_pct", "session_reset_at"
-	case "weekly":
-		pctCol, resetCol = "weekly_pct", "weekly_reset_at"
-	default:
-		return nil, fmt.Errorf("unknown gauge: %s", gauge)
+	pctCol, resetCol, err := gaugeColumns(gauge)
+	if err != nil {
+		return nil, err
 	}
 
 	beforeStr := before.UTC().Format(time.RFC3339)

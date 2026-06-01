@@ -1,9 +1,14 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: build test vet clean docs
+.PHONY: build build-benchtools test vet clean docs
 
 build:
 	go build -ldflags "-X main.version=$(VERSION)" -o claumon .
+
+# Same as build, but includes the dev-only `bench` and `diagnostics`
+# subcommands (excluded from release builds via the benchtools tag).
+build-benchtools:
+	go build -tags benchtools -ldflags "-X main.version=$(VERSION)" -o claumon .
 
 test:
 	go test -v -race -count=1 ./...
