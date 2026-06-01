@@ -206,6 +206,82 @@ func TestProvider_MarkExpired(t *testing.T) {
 	}
 }
 
+// TestProvider_MarkExpiredSurvivesReload is the regression test for the
+// self-inflicted 429 storm: a token the API rejected (401) must stay expired
+// even after Reload() re-reads the same locally-valid-looking credentials,
+// otherwise the poller keeps hammering the API every 30s.
+func TestProvider_MarkExpiredSurvivesReload(t *testing.T) {
+	dir := t.TempDir()
+	writeCredsFile(t, dir, `{
+		"claudeAiOauth": {
+			"accessToken": "rejected-token",
+			"expiresAt": `+expiresInFuture()+`
+		}
+	}`)
+
+	p := NewProvider(dir, "")
+	if status, _ := p.Status(); status != AuthOK {
+		t.Fatalf("initial Status() = %q, want ok", status)
+	}
+
+	// API rejects the token with a 401.
+	p.MarkExpired("API rejected token")
+
+	// Force a reload of the same (unchanged) credentials file.
+	p.mu.Lock()
+	p.lastReload = time.Time{}
+	p.mu.Unlock()
+	if err := p.Reload(); err != nil {
+		t.Fatalf("Reload() error: %v", err)
+	}
+
+	// The rejection must survive: ExpiresAt is in the future, but the server
+	// already said no, so Status() must stay expired.
+	if status, _ := p.Status(); status != AuthExpired {
+		t.Errorf("Status() after MarkExpired+Reload = %q, want expired", status)
+	}
+}
+
+// TestProvider_RejectionClearsOnNewToken verifies the poller recovers
+// automatically once Claude Code refreshes the token to a different value.
+func TestProvider_RejectionClearsOnNewToken(t *testing.T) {
+	dir := t.TempDir()
+	writeCredsFile(t, dir, `{
+		"claudeAiOauth": {
+			"accessToken": "rejected-token",
+			"expiresAt": `+expiresInFuture()+`
+		}
+	}`)
+
+	p := NewProvider(dir, "")
+	p.MarkExpired("API rejected token")
+
+	// A fresh token lands on disk.
+	writeCredsFile(t, dir, `{
+		"claudeAiOauth": {
+			"accessToken": "fresh-token",
+			"expiresAt": `+expiresInFuture()+`
+		}
+	}`)
+
+	p.mu.Lock()
+	p.lastReload = time.Time{}
+	p.mu.Unlock()
+	if err := p.Reload(); err != nil {
+		t.Fatalf("Reload() error: %v", err)
+	}
+
+	if status, _ := p.Status(); status != AuthOK {
+		t.Errorf("Status() after new token = %q, want ok", status)
+	}
+	p.mu.RLock()
+	rejected := p.rejectedToken
+	p.mu.RUnlock()
+	if rejected != "" {
+		t.Errorf("rejectedToken = %q, want empty after token replaced", rejected)
+	}
+}
+
 func TestProvider_Credentials(t *testing.T) {
 	dir := t.TempDir()
 	writeCredsFile(t, dir, `{

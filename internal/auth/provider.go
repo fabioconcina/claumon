@@ -16,6 +16,7 @@ type Provider struct {
 	lastReload      time.Time
 	authStatus      string // "ok" or "expired"
 	authMessage     string
+	rejectedToken   string // access token the API rejected (401); stays expired until replaced
 }
 
 const (
@@ -117,6 +118,7 @@ func (p *Provider) MarkExpired(message string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.authStatus = AuthExpired
+	p.rejectedToken = p.creds.AccessToken
 	if message != "" {
 		p.authMessage = message
 	} else {
@@ -155,6 +157,14 @@ func (p *Provider) updateStatus() {
 		p.authMessage = "No credentials available. Run 'claude /login' to authenticate."
 		return
 	}
+	// A token the API rejected (401) is expired until it's actually replaced
+	// on disk — the server's verdict outranks the local ExpiresAt clock.
+	if p.rejectedToken != "" && p.creds.AccessToken == p.rejectedToken {
+		p.authStatus = AuthExpired
+		p.authMessage = "Token rejected by API — start a Claude Code session to refresh."
+		return
+	}
+	p.rejectedToken = "" // a different token loaded; the rejection no longer applies
 	if p.creds.ExpiresAt != 0 && time.Now().After(time.Unix(p.creds.ExpiresAt, 0)) {
 		p.authStatus = AuthExpired
 		p.authMessage = "Token expired — start a Claude Code session to refresh."
