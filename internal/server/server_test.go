@@ -108,10 +108,21 @@ func TestHandleHistory(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 
+	// History is a continuous zero-filled series of `days` entries; the one
+	// populated day should appear within it.
 	var result []store.DailyAggregate
 	json.NewDecoder(w.Body).Decode(&result)
-	if len(result) != 1 {
-		t.Errorf("expected 1 history entry, got %d", len(result))
+	if len(result) != 7 {
+		t.Fatalf("expected 7 continuous history entries, got %d", len(result))
+	}
+	var found bool
+	for _, d := range result {
+		if d.InputTokens == 1000 && d.CostUSD == 0.05 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("populated day not found in history series: %+v", result)
 	}
 }
 
@@ -122,9 +133,17 @@ func TestHandleHistoryEmpty(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Mux.ServeHTTP(w, req)
 
-	body, _ := io.ReadAll(w.Body)
-	if string(body) != "[]\n" {
-		t.Errorf("expected empty array, got %q", string(body))
+	// With no data, history is still a continuous series of zero-filled days
+	// (default 14) so the chart renders a continuous calendar, not gaps.
+	var result []store.DailyAggregate
+	json.NewDecoder(w.Body).Decode(&result)
+	if len(result) != 14 {
+		t.Fatalf("expected 14 zero-filled entries, got %d", len(result))
+	}
+	for _, d := range result {
+		if d.InputTokens != 0 || d.CostUSD != 0 || d.SessionCount != 0 {
+			t.Errorf("expected zero-filled day, got %+v", d)
+		}
 	}
 }
 

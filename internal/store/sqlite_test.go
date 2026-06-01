@@ -19,6 +19,17 @@ func openTestStore(t *testing.T) *Store {
 	return st
 }
 
+// aggregateCount returns the number of rows persisted in daily_aggregates,
+// independent of GetHistory's zero-filled, windowed view.
+func aggregateCount(t *testing.T, st *Store) int {
+	t.Helper()
+	var n int
+	if err := st.db.QueryRow("SELECT COUNT(*) FROM daily_aggregates").Scan(&n); err != nil {
+		t.Fatalf("count aggregates: %v", err)
+	}
+	return n
+}
+
 func TestOpenAndClose(t *testing.T) {
 	st := openTestStore(t)
 	if err := st.Close(); err != nil {
@@ -46,14 +57,20 @@ func TestUpsertAndGetHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetHistory: %v", err)
 	}
-	if len(history) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(history))
+	// GetHistory returns a continuous series of `days` entries ending today,
+	// zero-filling idle days. Today's entry is the last one.
+	if len(history) != 30 {
+		t.Fatalf("expected 30 continuous entries, got %d", len(history))
 	}
-	if history[0].InputTokens != 1000 {
-		t.Errorf("InputTokens = %d, want 1000", history[0].InputTokens)
+	last := history[len(history)-1]
+	if last.Date != today {
+		t.Errorf("last entry date = %s, want today %s", last.Date, today)
 	}
-	if history[0].CostUSD != 0.05 {
-		t.Errorf("CostUSD = %f, want 0.05", history[0].CostUSD)
+	if last.InputTokens != 1000 {
+		t.Errorf("InputTokens = %d, want 1000", last.InputTokens)
+	}
+	if last.CostUSD != 0.05 {
+		t.Errorf("CostUSD = %f, want 0.05", last.CostUSD)
 	}
 }
 
@@ -65,11 +82,12 @@ func TestUpsertOverwrites(t *testing.T) {
 	st.UpsertDailyAggregate(DailyAggregate{Date: today, InputTokens: 999})
 
 	history, _ := st.GetHistory(30)
-	if len(history) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(history))
+	if len(history) != 30 {
+		t.Fatalf("expected 30 continuous entries, got %d", len(history))
 	}
-	if history[0].InputTokens != 999 {
-		t.Errorf("InputTokens = %d, want 999 (upsert should overwrite)", history[0].InputTokens)
+	last := history[len(history)-1]
+	if last.InputTokens != 999 {
+		t.Errorf("InputTokens = %d, want 999 (upsert should overwrite)", last.InputTokens)
 	}
 }
 
@@ -103,17 +121,69 @@ func TestSaveUsageSnapshot(t *testing.T) {
 func TestGetHistoryRespectsDays(t *testing.T) {
 	st := openTestStore(t)
 
-	// Insert an old entry that should be excluded with days=1
+	// An out-of-window entry must not leak into the series.
 	st.UpsertDailyAggregate(DailyAggregate{Date: "2020-01-01", InputTokens: 100})
+	today := time.Now().Format("2006-01-02")
+	st.UpsertDailyAggregate(DailyAggregate{Date: today, InputTokens: 42})
 
-	history, _ := st.GetHistory(1)
-	if len(history) != 0 {
-		t.Errorf("expected 0 entries for days=1, got %d", len(history))
+	history, _ := st.GetHistory(7)
+	if len(history) != 7 {
+		t.Fatalf("expected 7 continuous entries, got %d", len(history))
+	}
+	for _, h := range history {
+		if h.Date == "2020-01-01" {
+			t.Errorf("out-of-window date leaked into history")
+		}
+	}
+	last := history[len(history)-1]
+	if last.Date != today || last.InputTokens != 42 {
+		t.Errorf("last entry = {%s, %d}, want {%s, 42}", last.Date, last.InputTokens, today)
 	}
 
-	history, _ = st.GetHistory(99999)
-	if len(history) != 1 {
-		t.Errorf("expected 1 entry for large days range, got %d", len(history))
+	// days=1 yields exactly today, zero-filled when no usage recorded.
+	one, _ := st.GetHistory(1)
+	if len(one) != 1 || one[0].Date != today {
+		t.Errorf("GetHistory(1) = %+v, want single entry for today %s", one, today)
+	}
+}
+
+func TestGetHistoryZeroFillsGaps(t *testing.T) {
+	st := openTestStore(t)
+
+	now := time.Now()
+	d0 := now.Format("2006-01-02")
+	d2 := now.AddDate(0, 0, -2).Format("2006-01-02")
+	d3 := now.AddDate(0, 0, -3).Format("2006-01-02")
+	// Populate today and 3 days ago; leave the days in between empty.
+	st.UpsertDailyAggregate(DailyAggregate{Date: d0, InputTokens: 10})
+	st.UpsertDailyAggregate(DailyAggregate{Date: d3, InputTokens: 30})
+
+	history, _ := st.GetHistory(5)
+	if len(history) != 5 {
+		t.Fatalf("expected 5 continuous days, got %d", len(history))
+	}
+
+	// Dates must be strictly consecutive ascending, no gaps.
+	for i := 1; i < len(history); i++ {
+		prev, _ := time.Parse("2006-01-02", history[i-1].Date)
+		cur, _ := time.Parse("2006-01-02", history[i].Date)
+		if !cur.Equal(prev.AddDate(0, 0, 1)) {
+			t.Errorf("dates not continuous at %d: %s then %s", i, history[i-1].Date, history[i].Date)
+		}
+	}
+
+	byDate := make(map[string]DailyAggregate, len(history))
+	for _, h := range history {
+		byDate[h.Date] = h
+	}
+	if byDate[d0].InputTokens != 10 {
+		t.Errorf("today input = %d, want 10", byDate[d0].InputTokens)
+	}
+	if byDate[d3].InputTokens != 30 {
+		t.Errorf("d-3 input = %d, want 30", byDate[d3].InputTokens)
+	}
+	if byDate[d2].InputTokens != 0 {
+		t.Errorf("gap day d-2 input = %d, want 0 (zero-filled)", byDate[d2].InputTokens)
 	}
 }
 
@@ -136,12 +206,13 @@ func TestPruneRemovesOldData(t *testing.T) {
 	}
 
 	// Old aggregate should be gone, recent should remain
-	history, _ := st.GetHistory(99999)
-	if len(history) != 1 {
-		t.Fatalf("expected 1 aggregate after prune, got %d", len(history))
+	if c := aggregateCount(t, st); c != 1 {
+		t.Fatalf("expected 1 aggregate after prune, got %d", c)
 	}
-	if history[0].Date != today {
-		t.Errorf("remaining aggregate date = %s, want %s", history[0].Date, today)
+	var remaining string
+	st.db.QueryRow("SELECT date FROM daily_aggregates").Scan(&remaining)
+	if remaining != today {
+		t.Errorf("remaining aggregate date = %s, want %s", remaining, today)
 	}
 
 	// Old snapshot should be gone, recent should remain
@@ -165,9 +236,8 @@ func TestPruneKeepsAllWithinRetention(t *testing.T) {
 		t.Fatalf("Prune: %v", err)
 	}
 
-	history, _ := st.GetHistory(99999)
-	if len(history) != 3 {
-		t.Errorf("expected all 3 aggregates to survive prune, got %d", len(history))
+	if c := aggregateCount(t, st); c != 3 {
+		t.Errorf("expected all 3 aggregates to survive prune, got %d", c)
 	}
 }
 
@@ -189,12 +259,13 @@ func TestPruneRespectsRetentionDays(t *testing.T) {
 		t.Fatalf("Prune: %v", err)
 	}
 
-	history, _ := st.GetHistory(99999)
-	if len(history) != 1 {
-		t.Fatalf("expected 1 aggregate after prune(7), got %d", len(history))
+	if c := aggregateCount(t, st); c != 1 {
+		t.Fatalf("expected 1 aggregate after prune(7), got %d", c)
 	}
-	if history[0].Date != recent {
-		t.Errorf("remaining aggregate date = %s, want %s", history[0].Date, recent)
+	var remaining string
+	st.db.QueryRow("SELECT date FROM daily_aggregates").Scan(&remaining)
+	if remaining != recent {
+		t.Errorf("remaining aggregate date = %s, want %s", remaining, recent)
 	}
 
 	var count int

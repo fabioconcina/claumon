@@ -199,26 +199,41 @@ func (s *Store) Prune(retentionDays int) error {
 }
 
 func (s *Store) GetHistory(days int) ([]DailyAggregate, error) {
-	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	now := time.Now()
+	// Inclusive window of `days` calendar days ending today.
+	since := now.AddDate(0, 0, -(days - 1))
 	rows, err := s.db.Query(
 		`SELECT date, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, cost_usd, session_count, message_count
-		 FROM daily_aggregates WHERE date >= ? ORDER BY date ASC`, since,
+		 FROM daily_aggregates WHERE date >= ? ORDER BY date ASC`, since.Format("2006-01-02"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying history: %w", err)
 	}
 	defer rows.Close()
 
-	var result []DailyAggregate
+	byDate := make(map[string]DailyAggregate)
 	for rows.Next() {
 		var a DailyAggregate
 		if err := rows.Scan(&a.Date, &a.InputTokens, &a.OutputTokens, &a.CacheReadTokens, &a.CacheCreateTokens, &a.CostUSD, &a.SessionCount, &a.MessageCount); err != nil {
 			return nil, fmt.Errorf("scanning history row: %w", err)
 		}
-		result = append(result, a)
+		byDate[a.Date] = a
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating history rows: %w", err)
+	}
+
+	// Zero-fill the continuous date range from `since` to today so idle days
+	// render as empty bars instead of collapsing the calendar. Days bucket by
+	// local date, matching how the parser aggregates sessions.
+	result := make([]DailyAggregate, 0, days)
+	for d := since; !d.After(now); d = d.AddDate(0, 0, 1) {
+		date := d.Format("2006-01-02")
+		if a, ok := byDate[date]; ok {
+			result = append(result, a)
+		} else {
+			result = append(result, DailyAggregate{Date: date})
+		}
 	}
 	return result, nil
 }
