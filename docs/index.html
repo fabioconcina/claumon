@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>claumon — Claude Code Dashboard</title>
+<title>claumon - Claude Code Dashboard</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%23da7756'/></svg>">
 <meta name="description" content="Real-time Claude Code dashboard. Single binary, zero config. Monitor API usage, token costs, sessions, and memory files.">
-<meta property="og:title" content="claumon — Claude Code Dashboard">
+<meta property="og:title" content="claumon - Claude Code Dashboard">
 <meta property="og:description" content="Real-time Claude Code dashboard. Single binary, zero config. Monitor API usage, token costs, sessions, and memory files.">
-<meta property="og:image" content="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/screenshot.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/overview.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%238fbc8f'/></svg>">
@@ -165,6 +165,14 @@ a:hover { text-decoration: underline; }
   border-radius: 12px;
   border: 1px solid var(--border);
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.screenshot figure { margin: 0; }
+.screenshot figure + figure { margin-top: 40px; }
+.screenshot figcaption {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--text-dim);
+  text-align: center;
 }
 
 /* Features */
@@ -372,6 +380,7 @@ footer a { color: var(--text); }
     <span class="pill">Live updates</span>
     <span class="pill">Background service</span>
     <span class="pill">Homebrew</span>
+    <span class="pill">macOS &middot; Linux &middot; Windows</span>
   </div>
   <div class="cta-group">
     <a href="https://github.com/fabioconcina/claumon/releases/latest" class="btn btn-primary">Download</a>
@@ -386,7 +395,14 @@ footer a { color: var(--text); }
 
 <!-- Screenshot -->
 <section class="screenshot">
-  <img src="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/screenshot.png" alt="claumon dashboard screenshot">
+  <figure>
+    <img src="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/overview.png" alt="claumon dashboard screenshot">
+    <figcaption>Live dashboard: rate-limit gauges, token and cost breakdowns, and 14-day trends.</figcaption>
+  </figure>
+  <figure>
+    <img src="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/session-forecast.png" alt="claumon session forecast screenshot">
+    <figcaption>Session forecast: projected usage at reset with an 80% confidence interval.</figcaption>
+  </figure>
 </section>
 
 <!-- Features -->
@@ -396,7 +412,12 @@ footer a { color: var(--text); }
     <div class="feature-card">
       <div class="feature-icon" style="background: rgba(143,188,143,0.15); color: var(--green);">&#9685;</div>
       <h3>Rate limit gauges</h3>
-      <p>Live 5-hour and 7-day utilization with reset countdowns and an empirical-Bayes forecast of where you'll land at reset, with an 80% credible band and ETA to threshold.</p>
+      <p>Live 5-hour and 7-day utilization with reset countdowns and color-coded thresholds, plus separate Opus and Sonnet quotas when they apply.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background: rgba(125,191,184,0.15); color: var(--teal);">&#8599;</div>
+      <h3>Usage forecasts</h3>
+      <p>An empirical-Bayes model projects where each limit window lands at reset, with an 80% credible band and ETA to threshold. Refit daily from your own past windows.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon" style="background: rgba(232,200,114,0.15); color: var(--yellow);">&#9638;</div>
@@ -436,34 +457,6 @@ footer a { color: var(--text); }
   </div>
 </section>
 
-<!-- How it works -->
-<section class="how">
-  <h2>Get started</h2>
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-text">
-        <h3>Install</h3>
-        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">brew install fabioconcina/claumon/claumon</code> on macOS or Linux. Or grab a <a href="https://github.com/fabioconcina/claumon/releases/latest">prebuilt binary</a>.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-text">
-        <h3>Run once or install as a service</h3>
-        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon --open</code> for a quick look, or <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon service install</code> to start it on login. Credentials are picked up automatically.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-text">
-        <h3>Keep it updated</h3>
-        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">brew upgrade claumon</code> and you're done.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- Platforms -->
 <section class="platforms">
   <h2>Cross-platform</h2>
@@ -498,6 +491,34 @@ footer a { color: var(--text); }
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-windows-amd64.exe">amd64</a>
       </div>
       <div class="dl-note">If blocked: right-click the .exe &rarr; Properties &rarr; Unblock, or run <code>Unblock-File claumon-windows-*.exe</code></div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="how">
+  <h2>Get started</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <h3>Install</h3>
+        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">brew install fabioconcina/claumon/claumon</code> on macOS or Linux. Or grab a <a href="https://github.com/fabioconcina/claumon/releases/latest">prebuilt binary</a>.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <h3>Run once or install as a service</h3>
+        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon --open</code> for a quick look, or <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon service install</code> to start it on login. Credentials are picked up automatically.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <h3>Keep it updated</h3>
+        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">brew upgrade claumon</code> and you're done.</p>
+      </div>
     </div>
   </div>
 </section>

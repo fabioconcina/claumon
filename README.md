@@ -6,20 +6,26 @@
 
 # claumon
 
-**Claude Code dashboard** — run it, see where your tokens go.
+**Claude Code dashboard** - run it, see where your tokens go.
 
 Single binary, zero config, one browser tab. Runs on macOS, Linux, and Windows.
 
 ## Why claumon?
 
-There are plenty of Claude Code dashboards out there. This one isn't trying to be special — it's just my take on it, optimized for the things I care about: minimal, fast, and easy to set up.
+There are plenty of Claude Code dashboards out there. This one isn't trying to be special - it's just my take on it, optimized for the things I care about: minimal, fast, and easy to set up.
 
 Single binary, no dependencies, no build step, no config required. Run it and open a browser tab.
 
-It gives you rate limit gauges, per-session token breakdowns, cost estimates, historical trends, conversation history, and a memory browser with relationship graph, health scores, and staleness alerts — all updating in real time via SSE. Daily aggregates are stored in SQLite so you can track usage over weeks, not just the current session.
+It gives you rate limit gauges with usage forecasts, per-session token breakdowns, cost estimates, historical trends, conversation history, and a memory browser with relationship graph, health scores, and staleness alerts. Everything updates in real time via SSE. Daily aggregates are stored in SQLite so you can track usage over weeks, not just the current session.
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="claumon dashboard" width="700">
+  <img src="assets/overview.png" alt="claumon dashboard" width="700"><br>
+  <sub>Live dashboard: rate-limit gauges, token and cost breakdowns, and 14-day trends.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/session-forecast.png" alt="claumon session forecast" width="700"><br>
+  <sub>Session forecast: projected usage at reset with an 80% confidence interval.</sub>
 </p>
 
 ## Quick start
@@ -64,7 +70,7 @@ claumon
 
 Open [http://localhost:3131](http://localhost:3131) in your browser.
 
-claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works — only the API usage gauges are unavailable.
+claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works. Only the API usage gauges are unavailable.
 
 ## Run as a background service
 
@@ -105,7 +111,7 @@ $p = [Environment]::GetEnvironmentVariable('Path', 'User')
 claumon service install
 ```
 
-Adds claumon to the Windows Startup folder — it launches automatically (hidden) on login.
+Adds claumon to the Windows Startup folder - it launches automatically (hidden) on login.
 
 **Manage the service:**
 
@@ -149,55 +155,59 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 
 ### Rate limits (live from Claude API)
 
-- **Session usage** — 5-hour sliding window utilization with reset countdown
-- **Weekly usage** — 7-day window utilization with reset countdown
-- **Per-model quotas** — separate Opus and Sonnet weekly limits (when applicable)
-- **Extra usage credits** — monthly limit and spend (if enabled)
-- **Forecasts** — projected utilization at reset with an 80% credible interval, ETA to threshold, and a `LOW`/`MED`/`HIGH` confidence pill. Empirical-Bayes model refit daily from past windows; full spec in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf) (LaTeX source: [`MODEL.tex`](internal/forecast/MODEL.tex)).
-
+- **Session usage** - 5-hour sliding window utilization with reset countdown
+- **Weekly usage** - 7-day window utilization with reset countdown
+- **Per-model quotas** - separate Opus and Sonnet weekly limits (when applicable)
+- **Extra usage credits** - monthly limit and spend (if enabled)
 Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
+
+### Forecasts
+
+- **Projected utilization at reset** - an 80% credible interval and ETA to threshold for each rate-limit window, so you can see where you'll land before you get there.
+- **Empirical-Bayes model, refit daily** from your own past windows. Full spec in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf) (LaTeX source: [`MODEL.tex`](internal/forecast/MODEL.tex)).
+- **Benchmarked out-of-sample** with `claumon bench` - leave-one-out and temporal-holdout protocols, proper scoring (CRPS/pinball) with coverage and bias breakdowns.
 
 ### Token usage (from session files)
 
 - **Input / output / cache read / cache write** tokens per session
 - **Estimated equivalent API cost** using current model pricing
 - **Daily aggregates** with 14-day trend charts
-- **Activity heatmap** — 24-hour breakdown of token activity by hour
+- **Activity heatmap** - 24-hour breakdown of token activity by hour
 
 ### Sessions
 
-- **Active sessions table** — project, model, tokens, cost, messages, last activity
-- **Today / Recent toggle** — switch between today's sessions and the 50 most recent across all time
-- **Running process detection** — shows which sessions are actively running with green "active" badge
-- **Session detail view** — full message timeline with per-message token counts and tool usage
-- **Automatic discovery** — watches `~/.claude/projects/` for new and updated sessions
+- **Active sessions table** - project, model, tokens, cost, messages, last activity
+- **Today / Recent toggle** - switch between today's sessions and the 50 most recent across all time
+- **Running process detection** - shows which sessions are actively running with green "active" badge
+- **Session detail view** - full message timeline with per-message token counts and tool usage
+- **Automatic discovery** - watches `~/.claude/projects/` for new and updated sessions
 
 ### Running processes
 
-- **Live process table** — shows all running Claude Code processes with PID, chat title, project, type, and uptime
-- **Stop button** — send SIGINT to gracefully stop any running process (conversation is preserved on disk)
-- **Auto-refresh** — updates via SSE and periodic polling
+- **Live process table** - shows all running Claude Code processes with PID, chat title, project, type, and uptime
+- **Stop button** - send SIGINT to gracefully stop any running process (conversation is preserved on disk)
+- **Auto-refresh** - updates via SSE and periodic polling
 
 ### Memory browser
 
-- **All memory files** — CLAUDE.md, rules, auto-memory indexes, per-project memories
+- **All memory files** - CLAUDE.md, rules, auto-memory indexes, per-project memories
 - **Search** across content, path, project name, and frontmatter
-- **Filter by category** — CLAUDE.md, Rules, Index, Memory
-- **Staleness indicators** — green (today), gray (<7d), yellow (7–30d), red (>30d)
-- **Staleness alerts** — broken MEMORY.md links, orphaned files, index mismatches
-- **VS Code integration** — click to open files in your editor via `vscode://` links
+- **Filter by category** - CLAUDE.md, Rules, Index, Memory
+- **Staleness indicators** - green (today), gray (<7d), yellow (7–30d), red (>30d)
+- **Staleness alerts** - broken MEMORY.md links, orphaned files, index mismatches
+- **VS Code integration** - click to open files in your editor via `vscode://` links
 
 ### Memory health scores
 
-- **Per-file grading** — each memory file gets a letter grade (A–F) based on freshness, structure, specificity, and connectedness
-- **Improvement suggestions** — actionable tips for low-scoring files (add frontmatter, link from MEMORY.md, etc.)
+- **Per-file grading** - each memory file gets a letter grade (A–F) based on freshness, structure, specificity, and connectedness
+- **Improvement suggestions** - actionable tips for low-scoring files (add frontmatter, link from MEMORY.md, etc.)
 
 ### Memory graph
 
-- **Interactive visualization** — nodes are memory files, edges show relationships
-- **Project filters** — focus on specific projects
-- **Clickable legend** — toggle node types on/off
-- **Click to navigate** — click a node to jump to its file in the memory browser
+- **Interactive visualization** - nodes are memory files, edges show relationships
+- **Project filters** - focus on specific projects
+- **Clickable legend** - toggle node types on/off
+- **Click to navigate** - click a node to jump to its file in the memory browser
 
 ## Keyboard shortcuts
 
@@ -209,7 +219,7 @@ Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
 
 ## Live updates
 
-The dashboard uses Server-Sent Events (SSE) — no polling, no manual refresh. Changes appear instantly:
+The dashboard uses Server-Sent Events (SSE) - no polling, no manual refresh. Changes appear instantly:
 
 - **Usage gauges** update every 2 minutes (configurable) from the Claude API
 - **Session table** updates when any `.jsonl` session file changes on disk
@@ -233,7 +243,7 @@ Optional. Create `~/.claumon/config.json`:
 }
 ```
 
-All fields are optional — defaults are shown above. claumon works without a config file.
+All fields are optional. Defaults are shown above; claumon works without a config file.
 
 ## Data storage
 
@@ -245,11 +255,11 @@ The database uses WAL mode for concurrent reads during writes. No maintenance re
 
 claumon combines three data sources:
 
-1. **Claude API** (`/api/oauth/usage`) — polled periodically for rate limit utilization. Requires OAuth credentials from `claude /login`.
-2. **Session files** (`~/.claude/projects/*/*.jsonl`) — watched via `fsnotify` for real-time token counting. Each JSONL file is parsed for message-level token usage.
-3. **Memory files** (`~/.claude/projects/*/memory/*.md`, `CLAUDE.md`, rules) — discovered and parsed for frontmatter, rendered as HTML, analyzed for cross-references and staleness.
+1. **Claude API** (`/api/oauth/usage`) - polled periodically for rate limit utilization. Requires OAuth credentials from `claude /login`.
+2. **Session files** (`~/.claude/projects/*/*.jsonl`) - watched via `fsnotify` for real-time token counting. Each JSONL file is parsed for message-level token usage.
+3. **Memory files** (`~/.claude/projects/*/memory/*.md`, `CLAUDE.md`, rules) - discovered and parsed for frontmatter, rendered as HTML, analyzed for cross-references and staleness.
 
-Everything is embedded in a single binary via `//go:embed` — no external files, no Node.js, no build step for the frontend.
+Everything is embedded in a single binary via `//go:embed` - no external files, no Node.js, no build step for the frontend.
 
 ### Architecture
 
