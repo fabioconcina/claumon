@@ -2,17 +2,27 @@ package bench
 
 import (
 	"math"
+	"sort"
 	"time"
 
 	"github.com/fabioconcina/claumon/internal/forecast"
 )
 
-// Predictive is a Gaussian predictive distribution for utilization at reset.
+// Predictive is a strategy's predictive distribution for utilization at reset.
 // Strategies return a full distribution (not just a point) so proper scoring
 // rules can reward calibration and sharpness together.
+//
+// A Gaussian arm leaves Sample nil and is scored analytically from (Mu, Sigma).
+// A non-Gaussian arm - e.g. the monotone v2.0 forecast, whose CI is the skewed,
+// u_now-floored Monte Carlo terminal law - sets Sample to a SORTED set of MC
+// terminal draws; the scorers then use an unbiased sample CRPS and empirical
+// quantiles, so the predictive is scored as the distribution it actually is,
+// not a moment-matched Gaussian. Mu is the point estimate (mean) for MAE/bias
+// in either representation.
 type Predictive struct {
-	Mu    float64
-	Sigma float64
+	Mu     float64
+	Sigma  float64   // analytic spread; used when Sample == nil
+	Sample []float64 // sorted MC terminal draws; when non-nil, scored empirically
 }
 
 // Strategy is a forecast method that can be trained on a set of sessions and
@@ -28,10 +38,10 @@ type Strategy interface {
 // fitState carries the standard per-device fit (prior + calibration) used by
 // the model strategies, plus the climatology moments for baselines.
 type fitState struct {
-	prior    forecast.Prior
-	cal      forecast.Calibration
-	meanU    float64 // mean final utilization (climatology center)
-	sdU      float64 // sd of final utilization (climatology spread)
+	prior forecast.Prior
+	cal   forecast.Calibration
+	meanU float64 // mean final utilization (climatology center)
+	sdU   float64 // sd of final utilization (climatology spread)
 }
 
 // fitStandard runs the live two-pass fit: prior (sigma=0), calibrate, refit
@@ -86,7 +96,17 @@ func (Current) Predict(state any, history []forecast.Snapshot, uNow float64, now
 	if !ok {
 		return Predictive{}, false
 	}
-	return Predictive{Mu: res.Forecast.F, Sigma: res.Forecast.SigmaF}, true
+	p := Predictive{Mu: res.Forecast.F, Sigma: res.Forecast.SigmaF}
+	// Score the actual shipped distribution: the monotone forecast's CI is the
+	// skewed, u_now-floored Monte Carlo terminal law, not N(F, SigmaF). Draw its
+	// terminal sample so CRPS/coverage/pinball see that shape. Fall back to the
+	// Gaussian moments if the sample is unavailable (e.g. uNow at the ceiling).
+	if s, ok := forecast.SampleMC(now, reset, uNow, res.Posterior, st.cal, 1.0, cfg); ok && len(s.Terminal) > 0 {
+		sample := append([]float64(nil), s.Terminal...)
+		sort.Float64s(sample)
+		p.Sample = sample
+	}
+	return p, true
 }
 
 // --- Mu0: discard recency, forecast at the historical average rate ----------

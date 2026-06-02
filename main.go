@@ -34,14 +34,14 @@ import (
 var webFS embed.FS
 
 type Config struct {
-	Port             int                                `json:"port"`
-	PollIntervalSecs int                                `json:"poll_interval_seconds"`
-	CredentialsPath  string                             `json:"credentials_path"`
-	ClaudeDir        string                             `json:"claude_dir"`
-	DBPath           string                             `json:"db_path"`
-	RetentionDays    int                                `json:"retention_days"`
-	PricingOverrides    map[string]pricing.ModelPricing `json:"pricing_overrides,omitempty"`
-	StuckThresholdMins int                            `json:"stuck_threshold_minutes"`
+	Port               int                             `json:"port"`
+	PollIntervalSecs   int                             `json:"poll_interval_seconds"`
+	CredentialsPath    string                          `json:"credentials_path"`
+	ClaudeDir          string                          `json:"claude_dir"`
+	DBPath             string                          `json:"db_path"`
+	RetentionDays      int                             `json:"retention_days"`
+	PricingOverrides   map[string]pricing.ModelPricing `json:"pricing_overrides,omitempty"`
+	StuckThresholdMins int                             `json:"stuck_threshold_minutes"`
 }
 
 func defaultConfig() Config {
@@ -118,8 +118,16 @@ func main() {
 	}
 
 	openBrowser := flag.Bool("open", false, "Open dashboard in browser on startup")
+	portOverride := flag.Int("port", 0, "override dashboard port (default from config)")
+	dbOverride := flag.String("db", "", "override DB path (e.g. a copy, to run a test instance without touching the real DB)")
 	flag.Parse()
 	cfg := loadConfig()
+	if *portOverride != 0 {
+		cfg.Port = *portOverride
+	}
+	if *dbOverride != "" {
+		cfg.DBPath = *dbOverride
+	}
 
 	log.Printf("[startup] claumon starting — port=%d claude_dir=%s", cfg.Port, cfg.ClaudeDir)
 

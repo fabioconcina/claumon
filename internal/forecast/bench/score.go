@@ -9,8 +9,20 @@ import "math"
 
 const invSqrtPi = 0.5641895835477563 // 1/sqrt(pi)
 
-func phi(x float64) float64  { return math.Exp(-0.5*x*x) / math.Sqrt(2*math.Pi) }
+func phi(x float64) float64    { return math.Exp(-0.5*x*x) / math.Sqrt(2*math.Pi) }
 func bigPhi(x float64) float64 { return 0.5 * (1 + math.Erf(x/math.Sqrt2)) }
+
+// crps returns the CRPS of a predictive against y, dispatching on its
+// representation: an unbiased sample estimator when the predictive carries MC
+// draws (the monotone v2.0 forecast), else the exact Gaussian closed form. Both
+// estimate the same quantity with no systematic bias, so values are comparable
+// across strategies even when only some arms are sampled.
+func crps(p Predictive, y float64) float64 {
+	if len(p.Sample) > 0 {
+		return crpsSample(p.Sample, y)
+	}
+	return crpsGaussian(p.Mu, p.Sigma, y)
+}
 
 // crpsGaussian is the closed-form CRPS of N(mu, sigma^2) at y. Lower is better.
 // CRPS(N(mu,s),y) = s*[ w*(2*Phi(w)-1) + 2*phi(w) - 1/sqrt(pi) ], w=(y-mu)/s.
@@ -20,6 +32,61 @@ func crpsGaussian(mu, sigma, y float64) float64 {
 	}
 	w := (y - mu) / sigma
 	return sigma * (w*(2*bigPhi(w)-1) + 2*phi(w) - invSqrtPi)
+}
+
+// crpsSample is the unbiased sample estimator of CRPS from a SORTED sample.
+// CRPS = E|X-y| - 1/2 E|X-X'|; the pairwise term divides by K(K-1) (off-diagonal
+// pairs only), which removes the ~1/K low bias of the naive divide-by-K^2
+// plug-in - so a sampled arm is not flattered relative to an analytic one. The
+// sorted identity Sum_{i<j}(x_(j)-x_(i)) = Sum_i (2i+1-K) x_(i) makes it O(K).
+func crpsSample(sorted []float64, y float64) float64 {
+	n := len(sorted)
+	if n == 0 {
+		return math.NaN()
+	}
+	if n == 1 {
+		return math.Abs(sorted[0] - y)
+	}
+	var term1, weighted float64
+	for i, x := range sorted {
+		term1 += math.Abs(x - y)
+		weighted += float64(2*i+1-n) * x // i 0-indexed
+	}
+	term1 /= float64(n)
+	return term1 - weighted/(float64(n)*float64(n-1)) // weighted/(n(n-1)) = 1/2 E|X-X'|
+}
+
+// quantileOf returns the tau-quantile of a predictive: an empirical quantile of
+// the sorted sample when present, else the Gaussian Mu + z(tau)*Sigma. Each arm
+// is thus scored against its own correct quantiles (a skewed predictive is not
+// forced through a symmetric z-interval).
+func quantileOf(p Predictive, tau float64) float64 {
+	if len(p.Sample) > 0 {
+		return sampleQuantile(p.Sample, tau)
+	}
+	return p.Mu + zFor(tau)*p.Sigma
+}
+
+// sampleQuantile is the tau-quantile of a SORTED sample by linear interpolation
+// on rank (same convention as the forecaster's MC percentile).
+func sampleQuantile(sorted []float64, tau float64) float64 {
+	n := len(sorted)
+	if n == 0 {
+		return math.NaN()
+	}
+	if n == 1 {
+		return sorted[0]
+	}
+	rank := tau * float64(n-1)
+	if rank <= 0 {
+		return sorted[0]
+	}
+	if rank >= float64(n-1) {
+		return sorted[n-1]
+	}
+	lo := int(math.Floor(rank))
+	frac := rank - float64(lo)
+	return sorted[lo]*(1-frac) + sorted[lo+1]*frac
 }
 
 // pinball is the quantile (pinball) loss at level tau for forecast quantile q.
@@ -44,22 +111,21 @@ func zFor(tau float64) float64 {
 	return ppndGeneric(tau)
 }
 
-// meanPinball averages pinball loss over the 10/50/90 levels for a Gaussian.
+// meanPinball averages pinball loss over the 10/50/90 levels, using each
+// predictive's own quantiles (empirical for a sampled arm, Gaussian otherwise).
 func meanPinball(p Predictive, y float64) float64 {
 	levels := [3]float64{0.1, 0.5, 0.9}
 	var sum float64
 	for _, tau := range levels {
-		q := p.Mu + zFor(tau)*p.Sigma
-		sum += pinball(y, q, tau)
+		sum += pinball(y, quantileOf(p, tau), tau)
 	}
 	return sum / 3
 }
 
-// covered80 reports whether y falls in the central 80% interval of p.
+// covered80 reports whether y falls in the central 80% interval of p, using the
+// predictive's own 10th/90th quantiles.
 func covered80(p Predictive, y float64) bool {
-	lo := p.Mu + zFor(0.1)*p.Sigma
-	hi := p.Mu + zFor(0.9)*p.Sigma
-	return y >= lo && y <= hi
+	return y >= quantileOf(p, 0.1) && y <= quantileOf(p, 0.9)
 }
 
 // ppndGeneric is a Beasley-Springer-Moro style inverse normal CDF, used only

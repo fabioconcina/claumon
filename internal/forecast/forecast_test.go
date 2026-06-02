@@ -2,6 +2,7 @@ package forecast
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -434,6 +435,132 @@ func TestCalibrationStoresBHat(t *testing.T) {
 	if cal.BarTauSq < trueRateVar/4 || cal.BarTauSq > 4*trueRateVar {
 		t.Errorf("BarTauSq out of band: got %v, want within [%v, %v]",
 			cal.BarTauSq, trueRateVar/4, 4*trueRateVar)
+	}
+}
+
+func TestSampleGammaMeanVar(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	const mean, variance = 0.5, 0.05
+	const n = 200000
+	var sum, sumSq float64
+	for i := 0; i < n; i++ {
+		x := sampleGammaMeanVar(rng, mean, variance)
+		if x < 0 {
+			t.Fatalf("negative gamma draw: %v", x)
+		}
+		sum += x
+		sumSq += x * x
+	}
+	gotMean := sum / n
+	gotVar := sumSq/n - gotMean*gotMean
+	approxEq(t, "gamma mean", gotMean, mean, 0.02, 0.005)
+	approxEq(t, "gamma var", gotVar, variance, 0.05, 0.005)
+
+	// Also exercise the shape<1 branch (mean^2/var < 1), which is the common
+	// per-step regime (many near-zero increments, occasional jumps).
+	rng = rand.New(rand.NewSource(7))
+	var s2 float64
+	for i := 0; i < n; i++ {
+		s2 += sampleGammaMeanVar(rng, 0.01, 0.05) // shape = 0.002
+	}
+	approxEq(t, "small-shape gamma mean", s2/n, 0.01, 0.1, 0.002)
+
+	// Degenerate cases collapse cleanly.
+	if got := sampleGammaMeanVar(rng, 0, 0.1); got != 0 {
+		t.Errorf("non-positive mean should give 0, got %v", got)
+	}
+	if got := sampleGammaMeanVar(rng, 0.3, 0); got != 0.3 {
+		t.Errorf("non-positive variance should give the mean, got %v", got)
+	}
+}
+
+func TestSampleMCPathsAreMonotone(t *testing.T) {
+	// Core realism property of model v2.0: with positive-only increments the MC
+	// trajectories never decrease (so the fan-chart no longer dips).
+	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	reset := now.Add(4 * time.Hour)
+	post := Posterior{RHat: 0.12, TauPostSq: 3e-3, UsedOLS: true}
+	cal := Calibration{SigmaSessionSq: 5e-3, BarTauSq: 3e-3}
+	const uNow = 0.20
+
+	s, ok := SampleMC(now, reset, uNow, post, cal, 1.0, DefaultConfig())
+	if !ok {
+		t.Fatal("SampleMC returned !ok")
+	}
+	if len(s.Trajectories) == 0 {
+		t.Fatal("expected trajectories")
+	}
+	for k, path := range s.Trajectories {
+		if path[0] != uNow {
+			t.Fatalf("path %d does not start at uNow: %v", k, path[0])
+		}
+		for j := 1; j < len(path); j++ {
+			if path[j] < path[j-1]-1e-12 {
+				t.Fatalf("path %d decreased at step %d: %v -> %v", k, j, path[j-1], path[j])
+			}
+		}
+	}
+}
+
+func TestForecastCILowerNeverBelowUNow(t *testing.T) {
+	// Near-zero drift, large noise, long horizon: the old Gaussian lower bound
+	// dove far below uNow and had to be clipped there. The monotone process
+	// cannot produce a terminal value below uNow, so the p10 lower bound is at
+	// or above uNow by construction.
+	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	reset := now.Add(100 * time.Hour)
+	post := Posterior{RHat: 0.0, TauPostSq: 1e-2, UsedOLS: true}
+	cal := Calibration{SigmaSessionSq: 5e-3, BarTauSq: 1e-2}
+	const uNow = 0.06
+
+	s, ok := SampleMC(now, reset, uNow, post, cal, 1.0, DefaultConfig())
+	if !ok {
+		t.Fatal("SampleMC returned !ok")
+	}
+	for k, v := range s.Terminal {
+		if v < uNow-1e-12 {
+			t.Fatalf("terminal %d below uNow: %v < %v", k, v, uNow)
+		}
+	}
+	lo, hi := terminalCI(s.Terminal)
+	if lo < uNow-1e-12 {
+		t.Errorf("CI lower below uNow: %v < %v", lo, uNow)
+	}
+	if hi < lo {
+		t.Errorf("CI upper below lower: hi=%v lo=%v", hi, lo)
+	}
+}
+
+func TestRunForecastCIWellFormed(t *testing.T) {
+	// Through the full Run path: the CI now comes from the MC terminal
+	// distribution, so uNow <= Lower <= F <= Upper <= 1.
+	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	reset := time.Date(2026, 5, 24, 16, 0, 0, 0, time.UTC)
+	base := now.Add(-30 * time.Minute)
+	res, ok := Run(Input{
+		Now:         now,
+		Reset:       reset,
+		UNow:        0.30,
+		Snapshots:   workedExampleSnapshots(base),
+		Prior:       Prior{Mu0: 0.080, Tau0Sq: 3.6e-3, NSessions: 20},
+		Calibration: Calibration{SigmaSessionSq: 2.5e-3, BarTauSq: 3.6e-3},
+		Thresholds:  []float64{1.0},
+	}, DefaultConfig())
+	if !ok {
+		t.Fatal("Run returned !ok")
+	}
+	fc := res.Forecast
+	if fc.Lower < 0.30-1e-9 {
+		t.Errorf("Lower below uNow: %v", fc.Lower)
+	}
+	if fc.Lower > fc.F+1e-9 {
+		t.Errorf("Lower should be <= F: lower=%v F=%v", fc.Lower, fc.F)
+	}
+	if fc.Upper < fc.F-1e-9 {
+		t.Errorf("Upper should be >= F: upper=%v F=%v", fc.Upper, fc.F)
+	}
+	if fc.Upper > 1+1e-9 {
+		t.Errorf("Upper exceeds 1: %v", fc.Upper)
 	}
 }
 

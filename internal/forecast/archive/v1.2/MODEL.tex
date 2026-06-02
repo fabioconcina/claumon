@@ -48,7 +48,7 @@
 
 \title{Rate-Limit Forecast Model}
 \author{claumon \texttt{internal/forecast}}
-\date{Model version \textbf{v2.0} \enspace - \enspace 2026-06-02}
+\date{Model version \textbf{v1.2} \enspace --- \enspace 2026-05-30}
 
 \begin{document}
 \maketitle
@@ -75,7 +75,7 @@ forecaster reads the time series of utilization snapshots and produces:
     before reset.
 \end{enumerate}
 
-This procedure is an \emph{empirical Bayes} forecast~\cite{casella1985}: the prior on the rate
+This procedure is an \emph{empirical Bayes} forecast: the prior on the rate
 $r$ and the path-noise variance $\sigma^2$ are both estimated from past data
 (\S\ref{sec:rate}, \S\ref{sec:calib}) and then plugged into the posterior
 update, rather than being themselves marginalized under a hyperprior. The
@@ -88,84 +88,85 @@ through the calibration constants (\S\ref{sec:calib}).
 
 \section{The model in one paragraph}
 
-Inside the current window, utilization $u(t)$ accumulates at an unknown mean
-rate $r$ through strictly non-negative increments: tokens are spent, never
-returned. We estimate $r$ from the recent slope of the snapshots (OLS) and
-from a prior fit on past sessions, combined by conjugate update, exactly as in
-v1.x. What changed in v2.0 is the \emph{path law}: instead of Brownian noise
-(which can drift down), each increment is Gamma-distributed, so simulated
-trajectories are monotone non-decreasing and bounded below by $\unow$. The
-point forecast $F = \unow + \rpost\,\Dtrem$ and its moment spread $\sigma_F$
-are unchanged, but the 80\% CI and the ETA are now both read off a single Monte
-Carlo over rate and path uncertainty: the predictive at reset is the
-right-skewed, $\unow$-floored law the paths trace out, not a symmetric Gaussian
-$z$-quantile.
+Inside the current window, utilization $u(t)$ grows at an unknown constant
+rate $r$ plus Brownian noise (random behavioral pivots). We estimate $r$ from
+the recent slope of the snapshots (OLS) and from a Gaussian prior fit on
+past sessions, combined by conjugate update. The forecast at reset is the
+sum of two random pieces: deterministic-time-times-uncertain-rate, plus
+Brownian accumulation over the remaining horizon. Both pieces are Gaussian,
+so the forecast is Gaussian and the CI is a $z$-quantile. The ETA has no
+closed form, so we Monte Carlo it.
 
 \section{Generative model and assumptions}
 
-Condition on a non-negative mean rate $r$. For $s \in [0, \Dtrem]$ with
-$\Dtrem = \Treset - \tnow$, utilization accumulates as a Gamma process, a
-non-decreasing Lévy subordinator:
+For $s \in [0, \Dtrem]$ with $\Dtrem = \Treset - \tnow$,
 \[
-  u(\tnow + s) - \unow \;\sim\; \mathrm{Gamma}\!\Bigl(
-    \text{shape} = \tfrac{r^2 s}{\sigsessionsq},\;
-    \text{scale} = \tfrac{\sigsessionsq}{r}\Bigr),
+  u(\tnow + s) = \unow + r\,s + W(s),
+  \qquad W(s) \sim \mathcal{N}\!\bigl(0,\, \sigsessionsq\,s\bigr),
 \]
-so that, given $r$,
-\[
-  \mathbb{E}\bigl[u(\tnow+s) - \unow\bigr] = r\,s,
-  \qquad
-  \mathrm{Var}\bigl[u(\tnow+s) - \unow\bigr] = \sigsessionsq\,s.
-\]
-The mean and variance match the v1.x Brownian term-for-term; only the
-\emph{shape} changes, from a symmetric Gaussian that can decrease to a
-right-skewed law with support $[\unow, \infty)$. Increments over disjoint
-intervals are independent, so the process is monotone non-decreasing by
-construction. The rate $r$ is itself unknown and non-negative, with mean
-$\rpost$ and variance $\max(\taupostsq, \bar\tau^2)$
-(\S\ref{sec:rate}, \S\ref{sec:calib}); the Monte Carlo (\S\ref{sec:eta}) draws
-it from a Gamma matched to those moments. (The \S\ref{sec:rate} posterior on
-$r$ is Gaussian; we sample a moment-matched Gamma instead so the drawn rate
-stays positive, since a negative rate is unphysical here and would leave the
-Gamma increment ill-defined.) Three assumptions:
+with $r$ unknown and $W$ a Brownian motion independent of $r$. Three
+assumptions:
 
 \begin{enumerate}
-  \item \textbf{Constant mean rate.} $r$ is constant within a window.
+  \item \textbf{Linear conditional mean.} $r$ is constant within a window.
     Violated by abrupt mid-window mode shifts; partially absorbed by the
     recency window in \S\ref{sec:rate}.
-  \item \textbf{Gamma path noise, variance linear in time.} As in v1.x the
-    per-hour increment variance is the single calibrated scalar
-    $\sigsessionsq$; the Gamma process is the non-decreasing counterpart whose
-    increment variance also grows linearly in time, so the \S\ref{sec:calib}
-    calibration carries over unchanged.
+  \item \textbf{Brownian path noise.} Variance grows linearly with time.
+    Approximately correct if behavioral pivots are mean-zero and not too
+    heavy-tailed.
   \item \textbf{Exchangeable past sessions.} Historical sessions are iid
-    draws from the same process. Required for the calibration in
+    draws from the same noise process. Required for the calibration in
     \S\ref{sec:calib}.
 \end{enumerate}
 
-\paragraph{Why a Gamma process (v2.0).} Real utilization is monotone
-non-decreasing in $[0,1]$: tokens accumulate, the gauge only resets at the
-window boundary. v1.x used Brownian motion for its closed-form Gaussian CI, at
-the cost of paths that could drift below $\unow$, above $1$, or below $0$
-(none physical), patched by clipping the displayed CI to $[\unow, 1]$. v2.0
-removes the patch by adopting the Gamma process that v1.x's own notes flagged
-as the principled fix. Three consequences, all improvements:
+\paragraph{On using Brownian motion for a monotone quantity.} Real
+utilization is monotone non-decreasing in $[0,1]$: tokens accumulate, the
+gauge only resets at the window boundary. A Brownian path can drift below
+$\unow$, above $1$, or below $0$, none of which can happen physically. We
+keep BM anyway because it yields a Gaussian forecast and closed-form
+$z$-quantile CIs; the principled alternative is a non-decreasing process
+(Gamma process: $u(t+s) - \unow \sim \mathrm{Gamma}(rs/\beta,\beta)$, or
+compound Poisson over individual API calls), at the cost of MC for the CI.
+
+\medskip
+The simplification has three concrete consequences:
+
 \begin{itemize}
-  \item \textbf{Lower bound for free.} Every increment is $\ge 0$, so the 80\%
-    CI's lower edge sits at or above $\unow$ with no clipping, and the
-    predictive at reset is the right-skewed, $\unow$-floored law the paths
-    trace out.
-  \item \textbf{Honest first-passage.} A monotone path crosses a threshold
-    once and stays above it, so the ETA is never the artifact of a Brownian
-    path that dipped below and re-crossed later (the ``biased late'' effect
-    v1.x flagged in \S\ref{sec:eta}).
-  \item \textbf{Faithful visualisation.} The forecast-trajectory modal draws
-    the raw \S\ref{sec:eta} paths; under v2.0 they no longer dip.
+  \item \textbf{Unphysical lower tail.} $P\!\bigl(u(\tnow+s) < \unow\bigr)
+    = \Phi(-r\sqrt{s}/\sigma_{\text{session}})$. With representative
+    numbers ($r = 0.06\,\mathrm{h}^{-1}$, $\sigsessionsq = 2.5 \times
+    10^{-3}$) this is $\sim 2\%$ at $s = 3\,\mathrm{h}$ but $\sim 20\%$ at
+    $s = 30\,\mathrm{min}$. The display clip at $[\unow, 1]$
+    (\S\ref{sec:calib}) hides this in user-facing CIs, but the moments
+    are biased: the point forecast $F = \unow + \rpost\,\Dtrem$ is
+    \emph{slightly low} relative to the truncated-Gaussian mean, with the
+    bias worst at short horizons where the lower-tail mass is largest.
+  \item \textbf{MC ETAs biased late.} First-passage times in \S6 are
+    computed on raw BM paths that can dip below threshold and cross
+    later. A monotone process would cross sooner on those paths, so the
+    reported median ETA is conservatively late. Magnitude is bounded by
+    the same lower-tail probability above.
+  \item \textbf{Reinterpretation as forecast-error noise.} A defensible
+    reading is that $W(s)$ models the deviation of the realized
+    trajectory from the deterministic prediction $\unow + rs$, not literal
+    token movement. Under that reading $W(s) < 0$ means ``the user slowed
+    down relative to recent rate'', not ``tokens went down''. This is
+    consistent with how the calibration in \S\ref{sec:calib} fits $\hat
+    a$: against squared forecast errors, not squared step-to-step
+    increments.
 \end{itemize}
-The cost is that the forecast law is no longer Gaussian, so the CI and the ETA
-are both read off the Monte Carlo of \S\ref{sec:eta} rather than a closed-form
-$z$-quantile. The point forecast $F$ and its moment variance $\sigma_F^2$
-(\S\ref{sec:forecast}) are unchanged.
+
+\medskip
+The Brownian contribution to $\sigma_F^2$ is $\Dtrem\,\sigsessionsq$
+(linear), while the rate-uncertainty contribution from v1.1 is
+$\Dtrem^2 \cdot \max(\taupostsq, \bar\tau^2)$ (quadratic), so at long
+horizons BM is subdominant. If the new \texttt{UnderspreadX} diagnostic
+remains miscalibrated after v1.1 telemetry stabilises, replacing BM with a
+Gamma or compound-Poisson process is the natural next investigation.
+
+\paragraph{Visualisation note.} The forecast trajectory modal in the web
+UI draws the raw MC paths from \S6, which inherit the BM non-monotonicity
+and visibly dip. The dips disappear once a monotone process replaces BM.
 
 \section{Notation}
 
@@ -180,7 +181,7 @@ $r$                          & true mean growth rate within window ($\mathrm{h}^
 $\rols,\, \seols$            & OLS estimate and its standard error \\
 $\mu_0,\, \tauzerosq$        & Gaussian prior on $r$ from history \\
 $\rpost,\, \taupostsq$       & posterior on $r$ after the OLS update \\
-$\sigsessionsq$              & path-noise variance coefficient ($\mathrm{h}^{-1}$) \\
+$\sigsessionsq$              & Brownian diffusion coefficient ($\mathrm{h}^{-1}$) \\
 $F,\, \sigma_F^2$            & point forecast and its variance \\
 $z_{0.9}$                    & $\Phi^{-1}(0.9) \approx 1.2816$ \\
 $K,\, \Delta s$              & MC trajectories, step size (defaults: 500, 5 min) \\
@@ -203,7 +204,7 @@ with $S_{tt} = \sum (t_i - \bar t)^2$, $S_{tu} = \sum (t_i - \bar t)(u_i -
 \bar u)$, and $\sighat_\epsilon^2 = \tfrac{1}{n-2} \sum (u_i - \hat\alpha -
 \rols\,t_i)^2$. Default $\taurecent = 30$\,min.
 
-Strictly, the path residuals are heteroskedastic and serially correlated, so
+Strictly, Brownian residuals are heteroskedastic and serially correlated, so
 the iid-OLS variance formula above is an approximation. For the short
 recency window the discrepancy is small and the point estimate is unbiased
 either way; we accept the approximation and treat $\seolssq$ as the
@@ -212,15 +213,13 @@ likelihood precision in the conjugate update below.
 \paragraph{From history.} For each past completed session $s$ with final
 value $u_s^\ast$ and duration $D_s$, define $\rho_s = u_s^\ast / D_s$. The
 prior mean is the sample mean of $\rho_s$. For the prior variance, note that
-$\rho_s$ is the session's mean rate $r_s$ plus its centered path-noise
-increment averaged over the window, so under the generative model
+under the generative model
 \[
-  \mathrm{Var}[\rho_s] = \mathrm{Var}[r_s] + \frac{\sigsessionsq}{D_s}
+  \rho_s = r_s + \frac{W_s(D_s)}{D_s},
+  \qquad \mathrm{Var}[\rho_s] = \mathrm{Var}[r_s] + \frac{\sigsessionsq}{D_s},
 \]
-(the path-noise increment over $D_s$ has variance $\sigsessionsq D_s$, so
-dividing by $D_s$ contributes $\sigsessionsq/D_s$). The raw sample variance of
-$\rho_s$ therefore overstates $\mathrm{Var}[r_s]$ by the average path-noise
-contribution. Subtract it off:
+so the raw sample variance of $\rho_s$ overstates $\mathrm{Var}[r_s]$ by the
+average path-noise contribution. Subtract it off:
 \[
   \mu_0 = \mathrm{mean}_s\,\rho_s,
   \qquad
@@ -259,7 +258,7 @@ By the law of total variance, conditioning on $r$:
             + \underbrace{\Dtrem\,\sigsessionsq}_{\text{path noise}},
 \]
 where $\bar\tau^2$ is the historical-average rate variance recovered in
-\S\ref{sec:calib} (the quadratic coefficient $\hat b$ of that regression). The floor
+\S\ref{sec:calib} (the quadratic coefficient of the §5 regression). The floor
 $\max(\taupostsq,\, \bar\tau^2)$ is new in v1.1 and corrects a systematic
 under-spread when assumption A1 (constant within-window rate) is violated:
 the conjugate $\taupostsq$ then accurately estimates uncertainty about the
@@ -269,24 +268,21 @@ fit from past end-of-session errors, is the right scale for the latter. We
 take the max rather than always using $\bar\tau^2$ because for short windows
 where $\taupostsq$ is large (few snapshots) the conjugate value should win.
 
-\paragraph{Status as a moment summary.} The floor is a robustness correction
+\paragraph{Status as a posterior.} The floor is a robustness correction
 rather than a Bayesian update: $\max(\taupostsq,\, \bar\tau^2)$ is not the
-variance of any coherent posterior over $r$, so $\sigma_F^2$ should be read as
-the predictive variance with $\taupostsq$ replaced by an empirical lower bound.
-In v2.0 the marginal forecast is the right-skewed Monte Carlo law (\S\ref{sec:eta}: draw
-$r$ from a Gamma of mean $\rpost$ and variance $\max(\taupostsq,\bar\tau^2)$,
-then accumulate Gamma increments of per-step variance $\sigsessionsq\,dt$), but
-$\sigma_F^2$ remains its variance, with two contributions at different scales:
-rate uncertainty is quadratic in horizon (dominates at long horizons), path
-noise is linear (dominates at short).
+variance of any coherent posterior over $r$, so $\sigma_F^2$ should be read
+as v1.0's predictive variance with $\taupostsq$ replaced by an empirical
+lower bound, not as the variance of a posterior predictive. The marginal
+forecast is still Gaussian (we draw $r$ from a Gaussian, then add Gaussian
+path noise), with two contributions at different scales: rate uncertainty
+is quadratic in horizon (dominates at long horizons), path noise is linear
+(dominates at short).
 
-\paragraph{80\% CI.} The interval is the 10th and 90th percentiles of the Monte
-Carlo terminal distribution $\{u_k(\Treset)\}$ (\S\ref{sec:eta}), not a Gaussian
-$z$-quantile. Because every increment is non-negative the lower percentile is
-$\ge \unow$ automatically (no clip) and the band is right-skewed; only
-the upper edge is capped at $1$. $\sigma_F$ above is retained as a symmetric
-moment summary (and to parameterise the MC draws); $F$ remains the reported
-point estimate.
+\paragraph{80\% CI.} $[F - z_{0.9}\,\sigma_F,\ F + z_{0.9}\,\sigma_F]$,
+clipped to $[\unow, 1]$ for display: utilization within a reset window is
+monotone non-decreasing, so the Gaussian left tail dipping below $\unow$ is
+unphysical and the displayed lower bound is floored at $\unow$. The unclipped
+$F$ is retained for ETA computation.
 
 \section{Calibration of $\sigsessionsq$}\label{sec:calib}
 
@@ -313,8 +309,8 @@ obtain $\rpost(t_f)$, and the projection $\hat F(t_f) = u(t_f) +
 
 \paragraph{Two sources of error in each residual.} The residual $e_f$ mixes
 (A) the rate estimate being off at $t_f$, with the error compounded over
-$\delta_f$, and (B) path noise accumulating over $\delta_f$. By the
-same decomposition as \S\ref{sec:rate},
+$\delta_f$, and (B) Brownian path noise accumulating over $\delta_f$. By the
+same decomposition as \S5,
 \[
   \mathbb{E}[e_f^2 \mid \delta_f]
   = \underbrace{\delta_f\,\sigsessionsq}_{\text{path noise (B)}}
@@ -340,7 +336,7 @@ variance: that is the quantity we want. The weighting corrects
 heteroskedasticity: $e_f^2$ is a squared error whose own variance scales as
 $(\mathbb{E}[e_f^2])^2$ and so grows steeply with $\delta_f$, so the unweighted
 OLS of v1.0--v1.1 was dominated by the few long-horizon points and inflated
-$\hat a$ - over-predicting short-horizon spread by roughly an order of
+$\hat a$ --- over-predicting short-horizon spread by roughly an order of
 magnitude, and (through the noise correction in \S\ref{sec:rate})
 over-subtracting until $\tauzerosq$ floored to $\varepsilon$, which silently
 pinned the rate prior. Weighting by $1/\delta_f^2$ is a fixed proxy for
@@ -351,8 +347,8 @@ long-horizon points carry information about $\delta_f^2$.
 Note that this regression treats $\bar\tau^2$ as constant across forecast
 points, while in reality $\taupostsq(t_f)$ varies (it depends on how many
 recent snapshots existed at $t_f$). If $\taupostsq(t_f)$ correlates with
-$\delta_f$ (and it usually does, since $\delta_f$ is anti-correlated with
-elapsed time in the session), the missing covariance leaks into $\hat a$.
+$\delta_f$ --- and it usually does, since $\delta_f$ is anti-correlated with
+elapsed time in the session --- the missing covariance leaks into $\hat a$.
 A tighter alternative is to subtract the known $\delta_f^2\,\taupostsq(t_f)$
 piece as an offset and regress the residual on $\delta_f$ alone; we keep
 the joint regression for simplicity and absorb the bias into the daily
@@ -375,7 +371,7 @@ closer to the cross-session $\bar\tau^2$ than to today's $\taupostsq$.
 
 v1.1 therefore keeps $\hat b$ and stores it as $\bar\tau^2$ on the
 calibration. \S\ref{sec:forecast} uses $\max(\taupostsq,\, \bar\tau^2)$ in
-$\sigma_F^2$. The MC in \S\ref{sec:eta} likewise samples $r_k$ with standard deviation
+$\sigma_F^2$. The MC in \S6 likewise samples $r_k$ with standard deviation
 $\sqrt{\max(\taupostsq,\, \bar\tau^2)}$.
 
 The $b\,\delta_f^2$ term has to be present in the regression in any case:
@@ -385,65 +381,59 @@ but $\hat a$, biasing it upward.
 \paragraph{Floor and refit.} The floor on $\hat a$ guards against negative
 estimates from small samples (OLS does not enforce sign). Refit daily.
 
-\section{Threshold ETA}\label{sec:eta}
+\section{Threshold ETA}
 
 For threshold $\Cthr$ with $\unow < \Cthr \leq 1$, the first-passage time is
 $\Tstar = \inf\{t > \tnow : u(t) \geq \Cthr\}$, with $\Tstar = \infty$ if no
 crossing in $[\tnow,\, \Treset]$.
 
-\paragraph{Deterministic ETA (point estimate).} On the mean trajectory ($r =
-\rpost$, each increment at its expectation):
+\paragraph{Deterministic ETA (point estimate).} Setting $W \equiv 0$ and $r
+= \rpost$:
 \[
   \tilde\Tstar = \tnow + \frac{\Cthr - \unow}{\rpost},
 \]
 defined when $\rpost > 0$ and $\tilde\Tstar \leq \Treset$; else
-\texttt{nil}. Note that $\tilde\Tstar$ is \textbf{not} the median of $\Tstar$:
-for the monotone model two effects both push the median \emph{later}, writing
-$a = \Cthr - \unow$.
+\texttt{nil}. Note that $\tilde\Tstar$ is \textbf{not} the median of
+$\Tstar$ under the full stochastic model. Two effects pull in opposite
+directions:
 
 \begin{itemize}
-  \item \emph{Path skew.} Even at a fixed rate $r = \mu > 0$, $u(\tnow+t)-\unow$
-    is Gamma-distributed and right-skewed, so its median lies below its mean
-    $\mu t$. By the monotone-process duality $P(\Tstar \le \tnow+t) = P(u(\tnow+t)
-    - \unow \ge a)$, the median crossing is the $t$ at which $\mathrm{median}$
-    reaches $a$, which (median $<$ mean) needs $\mu t > a$; hence
-    $\mathrm{median}(\Tstar \mid r{=}\mu) > \tnow + a/\mu = \tilde\Tstar$.
-  \item \emph{Rate uncertainty.} Mixing over the Gamma rate $r$ (mean $\rpost$)
-    inflates first-passage times: the map $r \mapsto a/r$ is convex on $r > 0$
-    and steepens sharply as $r \to 0^+$, so the right tail of $\Tstar$ stretches
-    far more than the left compresses, and near-zero rate draws push crossings
-    past $\Treset$ ($\Tstar = \infty$ within the window).
+  \item \emph{BM skew (pulls median down).} For BM with fixed drift $\mu > 0$
+    hitting $a > 0$, $\Tstar \sim \mathrm{IG}(a/\mu,\, a^2/\sigma^2)$ with
+    mean $a/\mu$ and right skew, so $\mathrm{median}(\Tstar \mid r{=}\mu) <
+    a/\mu$.
+  \item \emph{Rate uncertainty (pulls median up).} Mixing over $r \sim
+    \mathcal{N}(\rpost,\, \taupostsq)$ inflates first-passage times
+    asymmetrically: the map $r \mapsto a/r$ is convex on $r > 0$ and
+    steepens sharply as $r \to 0^+$, so the right tail of $\Tstar$
+    stretches far more than the left tail compresses. Any mass at $r \leq
+    0$ contributes additional atoms at $\Tstar = \infty$. Both effects pull
+    the median of $\Tstar$ above $\tilde\Tstar$.
 \end{itemize}
 
-Both effects push $\mathrm{median}(\Tstar)$ above $\tilde\Tstar$, so for the
-monotone model $\tilde\Tstar$ is an early deterministic anchor, not an
-estimator of the median. The MC percentiles below are the authoritative
-summary.
+Which effect wins depends on the regime, so $\mathrm{median}(\Tstar)$ can
+sit on either side of $\tilde\Tstar$. The MC percentiles below are the
+authoritative summary; $\tilde\Tstar$ is a cheap deterministic anchor, not
+an estimator of the median.
 
-\paragraph{CI via Monte Carlo.} The first-passage time of the Gamma process
-with random rate has no tractable closed form. Simulate $K = 500$ trajectories
-(an MC run with the same seed supplies the terminal values for the
-\S\ref{sec:forecast} CI):
+\paragraph{CI via Monte Carlo.} The first-passage time of a Brownian motion
+with random Gaussian drift has no tractable closed form. Simulate $K = 500$
+trajectories:
 
 \begin{lstlisting}
-tau_eff^2 = max(tau_post^2, bar_tau^2)              # rate-variance floor
+tau_eff^2 = max(tau_post^2, bar_tau^2)     # v1.1 floor; see §4
 for k in 1..K:
-    r_k    = Gamma(mean=r_hat_post, var=tau_eff^2)  # >= 0
+    r_k    = N(r_hat_post, tau_eff^2)      # may be negative; do NOT clip
     u_k[0] = u_now
     for j in 1..M, dt = step size of jth bucket:
-        u_k[j] = u_k[j-1] + Gamma(mean=r_k*dt, var=sigma_session^2*dt)
+        u_k[j] = u_k[j-1] + r_k * dt + N(0, sigma_session^2 * dt)
     T*_k = linear interpolation of first j with u_k[j] >= C_thr
          = infinity if none
-    U_k  = u_k[M]                                   # terminal -> forecast CI
 \end{lstlisting}
 
-The rate and every increment are non-negative, so each path is monotone: once
-$u_k$ crosses $\Cthr$ it stays above, and the first crossing is final (no dip
-and re-cross). A near-zero rate draw simply never reaches $\Cthr$ within the
-window, yielding $\Tstark = \infty$ - the correct outcome under the model,
-and the non-negative analogue of v1.x's downward-drift paths. The Gamma
-sampler (Marsaglia-Tsang~\cite{marsaglia2000}) reuses the same seeded RNG, so
-trajectories stay reproducible.
+Negative $r_k$ draws are kept as-is: those trajectories drift downward and
+typically yield $\Tstark = \infty$, which is the correct outcome under the
+model. Clipping to zero would bias crossings upward and contradict \S5.
 
 \paragraph{Reported summaries.} Let $p_\infty$ be the fraction of
 trajectories with $\Tstark = \infty$. Define $\tilde\Tstar_{\text{MC}} =
@@ -462,7 +452,7 @@ as larger than any finite value):
 \end{itemize}
 
 RNG seed derived from $(\tnow,\, \Treset,\, \unow,\, \rpost,\, \taupostsq,\,
-\sigsessionsq,\, \bar\tau^2,\, \Cthr)$ for test reproducibility.
+\sigsessionsq)$ for test reproducibility.
 
 \section{Edge cases}
 
@@ -480,8 +470,7 @@ Reset detected in $\mathcal{R}$ ($u_{i+1} < u_i$)
 $\Cthr \leq \unow$
   & Threshold already crossed; return $\Tstar = \tnow$ \\
 $\rpost \leq 0$
-  & Gamma rate degenerates to $0$ (no growth): MC paths stay flat, so
-    $p_\infty \to 1$ and the ETA is \texttt{nil} \\
+  & Deterministic ETA undefined; rely on MC summary \\
 $F \notin [0, 1]$
   & Clip for display; retain unclipped for downstream \\
 \bottomrule
@@ -539,15 +528,9 @@ Forecast:
   \sigma_F \approx 0.200.
 \]
 
-80\% CI: the Monte Carlo terminal quantiles for this scenario are
-$[\,0.30,\ 0.78\,]$ - asymmetric, with the lower edge resting at $\unow =
-0.30$ (with $\sigma_F$ this large the Gamma rate has shape
-$\rpost^2/\max(\taupostsq,\bar\tau^2) \approx 1.1$, so a sizeable share of
-draws are near-zero and those paths barely move) and a longer reach upward.
-Display: ``Projected 49\% by reset (80\% CI: 30\%--78\%)''. For comparison the
-retired v1.x symmetric $z$-quantile was $0.490 \pm 1.282 \cdot 0.200 = [0.23,\,
-0.75]$, clipped up to $\unow = 0.30$ on the left; v2.0 produces the floor and
-the right-skew directly from the monotone process.
+80\% CI: $[0.490 - 1.282 \cdot 0.200,\ 0.490 + 1.282 \cdot 0.200]
+\approx [0.234,\ 0.746]$. Display: ``Projected 49\% by reset (80\% CI:
+23\%--75\%)''.
 
 Rate uncertainty dominates path noise by $4.3\times$. The recent slope is
 locally well-estimated, but historically the rate has varied a lot across
@@ -561,14 +544,10 @@ trajectories.
 \section{Limitations and upgrade paths}
 
 \begin{itemize}
-  \item \textbf{Heavy-tailed / bursty usage.} v2.0's Gamma process fixes the
-    monotonicity and the lower-tail floor and adds a right skew, but its tail
-    is still relatively light and its index of dispersion is tied to one
-    scalar. If the MC CI still undercovers in the right tail (check the
-    \texttt{UnderspreadX} and per-horizon coverage diagnostics on real
-    replays), the upgrades are a heavier subordinator (inverse Gaussian) or a
-    compound-Poisson increment that models idle-then-burst usage with an
-    explicit mass at ``no further growth''.
+  \item \textbf{Heavy-tailed pivots.} Real per-hour increments are
+    heavier-tailed than Gaussian. The 80\% CI undercovers in the tails.
+    Cheap fix when calibration data is plentiful: replace $z_{0.9}$ with an
+    empirical quantile of standardized residuals.
   \item \textbf{Constant-rate assumption.} A mode shift within the window
     (deep work $\to$ meetings) breaks (A1). The recency window $\taurecent$
     absorbs slow drift but not abrupt shifts. The principled upgrade is a
@@ -577,19 +556,5 @@ trajectories.
     day-of-week or project type. Stratified calibration is the upgrade, but
     requires more sessions per stratum.
 \end{itemize}
-
-\begin{thebibliography}{9}
-
-\bibitem{casella1985}
-G.~Casella.
-\newblock An introduction to empirical Bayes data analysis.
-\newblock \emph{The American Statistician}, 39(2):83--87, 1985.
-
-\bibitem{marsaglia2000}
-G.~Marsaglia and W.~W. Tsang.
-\newblock A simple method for generating gamma variables.
-\newblock \emph{ACM Transactions on Mathematical Software}, 26(3):363--372, 2000.
-
-\end{thebibliography}
 
 \end{document}

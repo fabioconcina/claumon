@@ -70,7 +70,7 @@ type acc struct {
 }
 
 func (a *acc) add(p Predictive, y float64) {
-	a.sumCRPS += crpsGaussian(p.Mu, p.Sigma, y)
+	a.sumCRPS += crps(p, y)
 	a.sumPin += meanPinball(p, y)
 	a.sumAbs += abs(p.Mu - y)
 	a.sumErr += p.Mu - y

@@ -8,7 +8,49 @@ ETAs, or calibration semantics, the prior `MODEL.tex` (and its PDF) moves to
 Bug fixes that bring the implementation back in line with the existing spec
 do **not** bump the model version — only changes to the spec itself do.
 
-## v1.2 - 2026-05-30 (current)
+## v2.0 - 2026-06-02 (current)
+
+Replaces the Brownian path law with a **Gamma process** (a non-decreasing Lévy
+subordinator), so simulated utilization is monotone non-decreasing - the
+physically correct shape for a cumulative quota gauge. This is the upgrade v1.x
+flagged in `MODEL.tex` (the generative-model and limitations notes) as the
+natural next step.
+
+- **Positive-only increments.** In the Monte Carlo, the per-path rate and
+  each per-step increment are now Gamma draws (`internal/forecast/subord.go`,
+  Marsaglia-Tsang) matching the same first two moments the Brownian model used
+  (mean `r·dt`, variance `σ_session²·dt` per step; rate variance floored by
+  `bar_τ²`). Every draw is `>= 0`, so trajectories never decrease and the
+  forecast-trajectory modal no longer dips.
+- **CI from the MC, not a z-quantile.** `Run` now reads the 80% CI off the 10th
+  and 90th percentiles of the MC terminal distribution. The lower edge sits at
+  or above `u_now` by construction, so the old clip-to-`u_now` patch is gone and
+  the interval is honestly right-skewed; the upper edge is still capped at 1.
+  (On the worked example the displayed CI goes from the clipped symmetric
+  `[30%, 75%]` to the skewed `[30%, 78%]`: the same lower floor, now reached
+  honestly rather than by clipping a Gaussian tail that fell to 23%, with a
+  slightly longer upper reach.)
+- **Honest first-passage.** Monotone paths cross a threshold once and stay
+  above, eliminating the "biased late" ETA artifact of Brownian paths that
+  dipped and re-crossed.
+- **Unchanged.** The point forecast `F = u_now + r_hat·Δt`, its moment spread
+  `σ_F` (still reported as `sigma_pct`), the rate estimation (OLS + conjugate
+  prior), and the calibration of `σ_session²` / `bar_τ²` all carry over
+  verbatim. `ProjectForecast` is retained as the moment helper used by the
+  `benchtools` diagnostics/bench harness.
+
+Scope note: this change targets realism (monotone paths, an honest lower
+floor), not a chase for a better score. The `benchtools` bench/diagnostics
+harness was updated in lockstep to score the actual v2.0 distribution instead
+of a moment-matched Gaussian: `bench.Predictive` now carries the Monte Carlo
+terminal sample, scored with an unbiased sample CRPS and empirical quantiles.
+Scoring the real interval surfaced that the 80% CI under-covers on idle-heavy
+real data - driven by the point forecast's pre-existing over-prediction on
+abandoned sessions, not by the interval shape (the honest floor no longer masks
+it). That is a centering problem, an instance of the abandonment limitation in
+the spec's limitations section, not a reason to widen the band.
+
+## v1.2 - 2026-05-30
 
 Two changes, both informed by the out-of-sample benchmark added in
 `internal/forecast/bench` (LOSO + temporal holdout, CRPS/pinball scoring,

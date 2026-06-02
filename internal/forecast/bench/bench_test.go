@@ -66,12 +66,18 @@ func TestGoldenLinearRecencyHarmless(t *testing.T) {
 // decel: the rate decays within the session, so extrapolating the recent slope
 // over-predicts. current must be worse than mu0 and biased high. This is the
 // concave-overshoot finding that drove the whole point-estimate investigation.
+// Under v2.0 (scored on the actual skewed MC predictive, not a moment Gaussian)
+// the CRPS gap narrows to ~6% from the v1.x ~10%+: the right-skewed law's mode
+// sits below the mean, so it covers the low truth (y < F) a little better. The
+// relationship is unchanged - current is still worse and still biased high - so
+// the threshold is relaxed to a material-gap check and the bias check carries
+// the "clearly over-predicts" signal.
 func TestGoldenDecelRecencyOverpredicts(t *testing.T) {
 	ms := runRegime("decel", "loso", 0)
 	cur := byName(t, ms, "current")
 	mu0 := byName(t, ms, "mu0")
-	if cur.CRPS <= 1.1*mu0.CRPS {
-		t.Errorf("recency should be clearly worse than mu0 on decel: current CRPS %.4f vs mu0 %.4f", cur.CRPS, mu0.CRPS)
+	if cur.CRPS <= 1.03*mu0.CRPS {
+		t.Errorf("recency should be materially worse than mu0 on decel: current CRPS %.4f vs mu0 %.4f", cur.CRPS, mu0.CRPS)
 	}
 	if cur.Biaspp <= 3 {
 		t.Errorf("current should over-predict on decel, bias=%.2f pp", cur.Biaspp)

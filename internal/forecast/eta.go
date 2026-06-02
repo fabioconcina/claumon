@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// EstimateETA implements §6: Monte Carlo simulation of the first-passage time
-// to threshold under (drift + Brownian) dynamics with Gaussian rate
-// uncertainty.
+// EstimateETA implements §8: Monte Carlo simulation of the first-passage time
+// to threshold under the monotone Gamma-process dynamics (model v2.0), with a
+// Gamma rate prior.
 //
 // Returns nil when the threshold is unreachable in [now, reset] under the
 // model (p_infty >= 0.5). When 0.1 <= p_infty < 0.5 the returned ETA has a
@@ -46,13 +46,18 @@ type Samples struct {
 	// CrossingsH is the first-passage time (hours from now) for each
 	// trajectory that crossed within [now, reset]. Length <= K.
 	CrossingsH []float64
+	// Terminal holds each trajectory's utilization at reset (length K). The
+	// forecast CI is read off the quantiles of this set: utilization is
+	// monotone, so the predictive at reset is the skewed, u_now-floored law
+	// the paths trace out, not a symmetric Gaussian.
+	Terminal []float64
 	// PInf = (K - len(CrossingsH)) / K.
 	PInf float64
 	// NTraj = K.
 	NTraj int
 }
 
-// SampleMC runs §6 simulation and returns the full trajectories plus the
+// SampleMC runs §8 simulation and returns the full trajectories plus the
 // finite first-passage times. Reuses the same RNG seed as EstimateETA so the
 // summary derived here matches the cached forecast result.
 func SampleMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, threshold float64, cfg Config) (Samples, bool) {
@@ -62,7 +67,7 @@ func SampleMC(now, reset time.Time, uNow float64, post Posterior, cal Calibratio
 	return runMC(now, reset, uNow, post, cal, threshold, cfg, true)
 }
 
-// runMC is the shared §6 core. collectTraj controls whether per-step values
+// runMC is the shared §8 core. collectTraj controls whether per-step values
 // are retained: EstimateETA passes false (allocates nothing extra),
 // SampleMC passes true.
 func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, threshold float64, cfg Config, collectTraj bool) (Samples, bool) {
@@ -84,13 +89,20 @@ func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, 
 		nSteps = 1
 	}
 	dt := horizon.Seconds() / float64(nSteps) / 3600.0
-	sigmaStep := math.Sqrt(cal.SigmaSessionSq * dt)
-	tauPost := math.Sqrt(math.Max(EffectiveRateVar(post.TauPostSq, cal.BarTauSq), 0))
+	// Monotone dynamics (model v2.0): the per-path rate and each per-step
+	// increment are Gamma-distributed, matching the Brownian model's first two
+	// moments (mean r_k*dt, variance sigma_session^2*dt per step; rate variance
+	// floored by bar_tau^2 across paths) but staying non-negative, so paths
+	// never decrease and never need clipping. When a path must finish at reset,
+	// its terminal value feeds the forecast CI quantiles.
+	incVarStep := cal.SigmaSessionSq * dt
+	rateVar := math.Max(EffectiveRateVar(post.TauPostSq, cal.BarTauSq), 0)
 
 	rng := rand.New(rand.NewSource(seedFrom(now, reset, uNow, post, cal, threshold)))
 
 	K := cfg.MCTraj
 	finite := make([]float64, 0, K)
+	terminal := make([]float64, K)
 	infCount := 0
 	var trajectories [][]float64
 	if collectTraj {
@@ -98,7 +110,7 @@ func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, 
 	}
 
 	for k := 0; k < K; k++ {
-		rk := post.RHat + tauPost*rng.NormFloat64()
+		rk := sampleGammaMeanVar(rng, post.RHat, rateVar)
 
 		var path []float64
 		if collectTraj {
@@ -108,13 +120,12 @@ func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, 
 
 		u := uNow
 		var hitHours float64 = math.Inf(1)
+		// Simulate every step (paths are monotone, so we never break early):
+		// the run always needs the terminal value for the CI, and recording the
+		// first crossing is a guarded no-op once it has fired.
 		for j := 1; j <= nSteps; j++ {
 			uPrev := u
-			noise := 0.0
-			if sigmaStep > 0 {
-				noise = sigmaStep * rng.NormFloat64()
-			}
-			u = uPrev + rk*dt + noise
+			u = uPrev + sampleGammaMeanVar(rng, rk*dt, incVarStep)
 			if collectTraj {
 				path[j] = u
 			}
@@ -124,12 +135,10 @@ func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, 
 					frac = (threshold - uPrev) / (u - uPrev)
 				}
 				hitHours = (float64(j-1) + frac) * dt
-				if !collectTraj {
-					break
-				}
 			}
 		}
 
+		terminal[k] = u
 		if collectTraj {
 			trajectories[k] = path
 		}
@@ -144,12 +153,13 @@ func runMC(now, reset time.Time, uNow float64, post Posterior, cal Calibration, 
 		StepHours:    dt,
 		Trajectories: trajectories,
 		CrossingsH:   finite,
+		Terminal:     terminal,
 		PInf:         float64(infCount) / float64(K),
 		NTraj:        K,
 	}, true
 }
 
-// summarizeETA implements §6 reporting rules on a finished MC run.
+// summarizeETA implements §8 reporting rules on a finished MC run.
 func summarizeETA(now time.Time, s Samples) *ETA {
 	if s.PInf >= 0.5 {
 		return &ETA{PInf: s.PInf}
@@ -173,6 +183,20 @@ func summarizeETA(now time.Time, s Samples) *ETA {
 		lower = &lt
 	}
 	return &ETA{Median: &medTime, Lower: lower, Upper: upper, PInf: s.PInf}
+}
+
+// terminalCI returns the 10th/90th percentiles of the MC terminal-utilization
+// sample, i.e. the 80% credible interval for utilization at reset. Because the
+// underlying process is monotone (every increment >= 0), the lower bound is
+// >= u_now by construction - no clipping needed - and the interval is
+// right-skewed rather than the symmetric Gaussian z-interval of v1.x.
+func terminalCI(terminal []float64) (lo, hi float64) {
+	if len(terminal) == 0 {
+		return math.NaN(), math.NaN()
+	}
+	s := append([]float64(nil), terminal...)
+	sort.Float64s(s)
+	return percentile(s, 0.1, len(s)), percentile(s, 0.9, len(s))
 }
 
 // percentile returns the p-quantile of the sorted slice xs, treating sample

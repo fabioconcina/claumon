@@ -164,7 +164,7 @@ Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
 ### Forecasts
 
 - **Projected utilization at reset** - an 80% credible interval and ETA to threshold for each rate-limit window, so you can see where you'll land before you get there.
-- **Empirical-Bayes model, refit daily** from your own past windows. Full spec in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf) (LaTeX source: [`MODEL.tex`](internal/forecast/MODEL.tex)).
+- **Empirical-Bayes model, refit daily** from your own past windows, over a monotone (non-decreasing) usage process so the interval respects that utilization only grows within a window. Full spec in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf) (LaTeX source: [`MODEL.tex`](internal/forecast/MODEL.tex)).
 - **Benchmarked out-of-sample** with `claumon bench` - leave-one-out and temporal-holdout protocols, proper scoring (CRPS/pinball) with coverage and bias breakdowns.
 
 ### Token usage (from session files)

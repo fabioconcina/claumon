@@ -4,14 +4,17 @@
 // calibration.go for the pieces.
 package forecast
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // ModelVersion identifies the math being implemented. Bump it whenever
 // MODEL.tex changes in a way that shifts forecast distributions, ETAs, or
 // calibration semantics - bug fixes that match the spec don't count. The
 // CHANGELOG in MODEL.tex tracks what each bump means, and retired specs
 // live under internal/forecast/archive/<this-value>/.
-const ModelVersion = "v1.2"
+const ModelVersion = "v2.0"
 
 // Snapshot is one observed utilization point.
 type Snapshot struct {
@@ -64,14 +67,17 @@ type Posterior struct {
 	UsedOLS   bool
 }
 
-// Forecast is the projected utilization at reset with its 80% CI. Lower and
-// Upper are clipped to [uNow, 1] for display (utilization only grows within a
-// window); F is unclipped so ETA logic can reason about it.
+// Forecast is the projected utilization at reset with its 80% CI. F is the
+// mean (u_now + r_hat*deltaT) and SigmaF is its analytic moment spread. Lower
+// and Upper are the 10th/90th percentiles of the monotone Monte Carlo terminal
+// distribution (see Run): because every increment is >= 0, Lower is naturally
+// >= u_now and the interval is right-skewed, replacing the clipped symmetric
+// z-interval of model v1.x. Upper is capped at 1.
 type Forecast struct {
-	F      float64 // point forecast at reset (unclipped)
+	F      float64 // point forecast at reset (mean, unclipped)
 	SigmaF float64 // sqrt(rate-variance term + path-noise term)
-	Lower  float64 // 80% CI lower, clipped
-	Upper  float64 // 80% CI upper, clipped
+	Lower  float64 // 80% CI lower, from MC terminal p10 (>= u_now)
+	Upper  float64 // 80% CI upper, from MC terminal p90 (capped at 1)
 	DeltaT float64 // remaining horizon in hours
 }
 
@@ -96,8 +102,8 @@ type Result struct {
 // override fields as needed; zero-value fields fall back to defaults.
 type Config struct {
 	TauRecent   time.Duration // §3 recency window (default 30 min)
-	MCTraj      int           // §6 trajectories (default 500)
-	MCStep      time.Duration // §6 step size (default 5 min)
+	MCTraj      int           // §8 trajectories (default 500)
+	MCStep      time.Duration // §8 step size (default 5 min)
 	VarianceEps float64       // floor for variance estimates (default 1e-6)
 }
 
@@ -157,8 +163,32 @@ func Run(in Input, cfg Config) (Result, bool) {
 	rateVar := EffectiveRateVar(post.TauPostSq, in.Calibration.BarTauSq)
 	fc := ProjectForecast(in.UNow, post.RHat, rateVar, in.Calibration.SigmaSessionSq, deltaT)
 
+	// Replace the symmetric z-quantile CI with the 80% interval of the monotone
+	// MC terminal distribution: Lower is then naturally >= u_now (no clip) and
+	// the band is right-skewed. F and SigmaF keep their analytic moment values.
+	// This single MC run is shared with the matching threshold's ETA below
+	// (same seed -> same crossings), so we never simulate it twice.
+	ciThr := 1.0
+	if len(in.Thresholds) > 0 {
+		ciThr = in.Thresholds[0]
+	}
+	var ciSamples *Samples
+	if s, ok := runMC(in.Now, in.Reset, in.UNow, post, in.Calibration, ciThr, cfg, false); ok && len(s.Terminal) > 0 {
+		lo, hi := terminalCI(s.Terminal)
+		fc.Lower = lo
+		fc.Upper = math.Min(hi, 1)
+		ciSamples = &s
+	}
+
 	etas := make(map[float64]*ETA, len(in.Thresholds))
 	for _, thr := range in.Thresholds {
+		// Reuse the CI run for its own threshold instead of repeating the
+		// identical MC. EstimateETA still owns the threshold<=uNow short-circuit,
+		// so we only short-cut when that branch wouldn't fire.
+		if ciSamples != nil && thr == ciThr && thr > in.UNow {
+			etas[thr] = summarizeETA(in.Now, *ciSamples)
+			continue
+		}
 		etas[thr] = EstimateETA(in.Now, in.Reset, in.UNow, post, in.Calibration, thr, cfg)
 	}
 
