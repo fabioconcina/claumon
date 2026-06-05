@@ -219,6 +219,10 @@ func (s *Service) SampleFor(gauge GaugeKind, resetAt string, uNowPct float64, no
 	if !ok {
 		return SamplePayload{}, false
 	}
+	// Mirror Run: replace ProjectForecast's analytic z-interval with the
+	// monotone MC terminal p10/p90 so the modal footer's 80% CI matches the
+	// gauge line instead of showing the symmetric Gaussian interval.
+	applyTerminalCI(&fc, mc.Terminal)
 	eta := summarizeETA(now, mc)
 
 	// Subsample trajectories with a uniform stride. Histogram (CrossingsH)

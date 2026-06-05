@@ -1,33 +1,26 @@
-## Forecast model → v2.0
+## Fix: forecast popup now reports the same numbers as the gauge
 
-- **Utilization is now modeled as a monotone, positive-only process.** v1.x
-  modeled within-window growth as Brownian motion, which can drift downward: the
-  Monte Carlo fan-chart visibly dipped, and the lower confidence bound had to be
-  clipped back up to current utilization because the symmetric Gaussian tail
-  fell below it (tokens never un-spend). v2.0 replaces the path law with a Gamma
-  process (non-decreasing by construction) matched to the same mean and
-  variance, so: simulated trajectories never decrease; the 80% interval is read
-  off the Monte Carlo terminal quantiles, which are right-skewed with a lower
-  bound that rests at current utilization on its own (no clip); and the
-  threshold ETA no longer counts paths that dipped below and re-crossed later.
-  The point forecast itself is unchanged. The v1.2 spec is preserved under
-  [`internal/forecast/archive/v1.2/`](internal/forecast/archive/v1.2/); the math
-  is in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf) and
-  [`internal/forecast/CHANGELOG.md`](internal/forecast/CHANGELOG.md).
+- **The trajectory popup showed a different 80% CI (and ETA) than the gauge
+  line.** Three things were pulling them apart. (1) The popup footer was still
+  reporting `ProjectForecast`'s symmetric Gaussian `mean ± z·σ` interval instead
+  of the v2.0 monotone Monte Carlo terminal quantiles the gauge uses. (2) The
+  popup simulated against an 80% threshold while the gauge uses 100%, and since
+  the threshold is folded into the Monte Carlo seed, the two drew different
+  sample paths and therefore different intervals (this also made the popup say
+  "no forecast" once usage passed 80%). (3) The popup re-ran the whole simulation
+  at open time, a different instant than the poll that fed the gauge, so even
+  matched inputs drifted by sampling noise. Now both surfaces forecast against
+  the same threshold, and the popup's headline (projected %, 80% CI, ETA) reuses
+  the gauge's already-computed forecast rather than re-simulating it, so the two
+  always show identical numbers. The trajectory fog and histogram are still a
+  fresh simulation for the visualization.
 
-## New: `--port` and `--db` flags
+## Pricing: Claude Opus 4.8
 
-- **Run a second instance without editing your config.** `--port` overrides the
-  dashboard port and `--db` the database path, both from the command line (e.g.
-  `claumon --port 3132 --db /tmp/test.db`). Handy for trying a build on another
-  port against a copy of your data while your main instance keeps running.
-
-## Internals
-
-- **The forecast benchmark now scores the shipped distribution.** The
-  `benchtools` bench harness scored a Gaussian rebuilt from the forecast's mean
-  and spread; with v2.0's skewed, floored interval that proxy no longer matched
-  what ships. `Predictive` now carries the Monte Carlo terminal sample and is
-  scored with an unbiased sample CRPS and empirical quantiles, so CRPS,
-  coverage, and pinball reflect the actual v2.0 distribution. Development and
-  validation tool only; it does not affect the dashboard.
+- **Added `claude-opus-4-8` to the pricing table.** Same tier as Opus
+  4.5/4.6/4.7 ($5 / $25 per million input/output tokens). Previously Opus 4.8
+  sessions fell through to the `claude-opus-4-7` fallback, which carries the same
+  price, so costs were already correct; the model now resolves to its own entry
+  explicitly, and the "latest known opus" fallback points at 4.8. Pricing lives
+  in [`pricing.json`](pricing.json), mirrored to the embedded fallback in
+  [`internal/pricing/embedded.json`](internal/pricing/embedded.json).

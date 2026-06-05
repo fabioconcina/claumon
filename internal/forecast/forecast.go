@@ -16,6 +16,14 @@ import (
 // live under internal/forecast/archive/<this-value>/.
 const ModelVersion = "v2.0"
 
+// UIThresholdPct is the crossing threshold (in percent) the dashboard forecasts
+// against. The gauge poller and the trajectory popup both use it, so the two
+// surfaces simulate the same regime and report the same "ETA to X%". The MC
+// threshold is folded into the RNG seed, so using one value here keeps the
+// gauge and popup from drawing different sample paths (and thus different 80%
+// intervals) - the bug that came from the popup hardcoding a different value.
+const UIThresholdPct = 100.0
+
 // Snapshot is one observed utilization point.
 type Snapshot struct {
 	Time time.Time
@@ -174,9 +182,7 @@ func Run(in Input, cfg Config) (Result, bool) {
 	}
 	var ciSamples *Samples
 	if s, ok := runMC(in.Now, in.Reset, in.UNow, post, in.Calibration, ciThr, cfg, false); ok && len(s.Terminal) > 0 {
-		lo, hi := terminalCI(s.Terminal)
-		fc.Lower = lo
-		fc.Upper = math.Min(hi, 1)
+		applyTerminalCI(&fc, s.Terminal)
 		ciSamples = &s
 	}
 
@@ -231,6 +237,20 @@ func filterRecent(all []Snapshot, now time.Time, tau time.Duration) []Snapshot {
 		}
 	}
 	return out
+}
+
+// applyTerminalCI replaces the analytic symmetric z-interval that
+// ProjectForecast leaves on fc.Lower/fc.Upper with the monotone MC terminal
+// p10/p90 (the model v2.0 CI), capping the upper bound at 1. Both Run and
+// SampleFor call this so the gauge line and the modal footer report the same
+// 80% interval and can't drift apart. No-op when terminal is empty.
+func applyTerminalCI(fc *Forecast, terminal []float64) {
+	if len(terminal) == 0 {
+		return
+	}
+	lo, hi := terminalCI(terminal)
+	fc.Lower = lo
+	fc.Upper = math.Min(hi, 1)
 }
 
 func clip01(x float64) float64 {

@@ -367,8 +367,9 @@ func (h *Handlers) HandleForecastSample(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 80% is the default UI threshold; matches the dim "ETA to 80%" text in the gauge.
-	const thresholdPct = 80.0
+	// Forecast against the same threshold the gauge uses, so the popup simulates
+	// the same regime and its threshold line / ETA match the gauge's "ETA to X%".
+	const thresholdPct = forecast.UIThresholdPct
 	// 120 trajectories is enough for legible fog; histogram uses the full K.
 	const maxTraj = 120
 	// Cap each trajectory's length so weekly (~600 5-min steps) doesn't ship MB.
@@ -379,7 +380,35 @@ func (h *Handlers) HandleForecastSample(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, map[string]interface{}{"available": false, "data": nil})
 		return
 	}
+	// The popup re-simulates to draw the trajectory fog, but its headline
+	// (projected %, 80% CI, ETA) must equal the gauge's. The gauge value is
+	// computed once per poll and cached in latestUsage; reuse it so the two can't
+	// disagree by re-simulation noise. Falls back to the fresh sample if the
+	// cached forecast is absent.
+	if fcMap, ok := data["forecast"].(map[string]forecast.Payload); ok {
+		if p, ok := fcMap[string(gauge)]; ok {
+			sample = applyCachedHeadline(sample, p)
+		}
+	}
 	writeJSON(w, map[string]interface{}{"available": true, "data": sample})
+}
+
+// applyCachedHeadline overrides a sample's headline numbers (projected %, 80%
+// CI, and the ETA for the matching threshold) with the gauge's last broadcast
+// forecast, so the popup reports exactly what the gauge shows instead of a
+// freshly simulated interval. Percentages on the cached payload are 0-100; the
+// sample carries fractions, hence the /100.
+func applyCachedHeadline(s forecast.SamplePayload, p forecast.Payload) forecast.SamplePayload {
+	s.F = p.ProjectedPct / 100
+	s.CILo = p.Lower80Pct / 100
+	s.CIHi = p.Upper80Pct / 100
+	for _, e := range p.ETAs {
+		if e.ThresholdPct == s.ThresholdPct {
+			s.ETA = e
+			break
+		}
+	}
+	return s
 }
 
 func (h *Handlers) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {

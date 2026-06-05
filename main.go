@@ -419,7 +419,7 @@ func fetchAndBroadcastUsage(ctx context.Context, client *api.Client, st *store.S
 // the first few polls until the daily refit lands and history exists.
 func attachForecasts(evt map[string]interface{}, usage *api.UsageResponse, fcSvc *forecast.Service) {
 	now := time.Now()
-	thresholds := []float64{100}
+	thresholds := []float64{forecast.UIThresholdPct}
 	out := map[string]forecast.Payload{}
 
 	if usage.SessionResetAt != "" {
