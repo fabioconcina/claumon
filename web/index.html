@@ -104,6 +104,7 @@ a:hover { text-decoration: underline; }
 .gauge-info .reset { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .gauge-info .forecast { font-size: 10px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
 .gauge-info .forecast .fc-proj { color: var(--text-dim); }
+.gauge-info .forecast .fc-pct { font-weight: 700; }
 .gauge-info .forecast .fc-ci { color: var(--text-dim); opacity: 0.8; }
 .gauge-info .forecast .fc-eta { color: var(--text-dim); margin-top: 1px; }
 
@@ -1201,7 +1202,7 @@ function updateForecast(id, fc) {
   const proj = fc.projected_pct;
   const loPct = fc.lower_80_pct;
   const hiPct = fc.upper_80_pct;
-  let line1 = `<span class="fc-proj fc-proj-trigger" onclick="openForecastModal('${id}')" title="Click for trajectory simulation">Projected ${proj.toFixed(0)}% at reset</span>
+  let line1 = `<span class="fc-proj fc-proj-trigger" onclick="openForecastModal('${id}')" title="Click for trajectory simulation">Projected <span class="fc-pct" style="color:${gaugeColor(proj)}">${proj.toFixed(0)}%</span> at reset</span>
     <span class="fc-ci">(80% CI: ${loPct.toFixed(0)}%-${hiPct.toFixed(0)}%)</span>`;
   let line2 = '';
   const etas = fc.etas || [];
@@ -2853,6 +2854,9 @@ function renderForecastSample(d) {
     }
   }
 
+  // terminal point at reset: the main estimate E[u(tReset)] = F
+  svg += `<circle cx="${x(tReset)}" cy="${y(d.f)}" r="3.5" fill="${gaugeColor(Math.round(d.f * 100))}" stroke="#1a1a1a" stroke-width="1.5"/>`;
+
   // u_now pulsing dot
   svg += `<circle class="fc-now-dot" cx="${x(tNow)}" cy="${y(d.u_now)}" r="4" fill="#7dbfb8" stroke="#1a1a1a" stroke-width="1.5"/>`;
 
@@ -2872,7 +2876,7 @@ function renderForecastSample(d) {
     else if (lo)  etaRange = `≥ ${lo}`;
   }
   document.getElementById('fc-foot').innerHTML = `
-    <span>Projected at reset: <b>${F}%</b> &middot; 80% CI ${ciLo}%-${ciHi}%</span>
+    <span>Projected at reset: <b style="color:${gaugeColor(F)}">${F}%</b> (80% CI ${ciLo}%-${ciHi}%)</span>
     ${etaCenter ? `<span>ETA to ${d.threshold_pct.toFixed(0)}%: <b>${etaCenter}</b> &middot; ${etaRange}</span>` : ''}
   `;
 }
