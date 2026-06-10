@@ -6,17 +6,36 @@
 
 # claumon
 
-**Claude Code dashboard** - run it, see where your tokens go.
+**See where your Claude Code limits are headed before you hit them.**
 
 Single binary, zero config, one browser tab. Runs on macOS, Linux, and Windows.
 
 ## Why claumon?
 
-There are plenty of Claude Code dashboards out there. This one isn't trying to be special - it's just my take on it, optimized for the things I care about: minimal, fast, and easy to set up.
+Anthropic's usage analytics dashboard is for Team and Enterprise org admins; it is [not available to individual Pro or Max plans](https://support.claude.com/en/articles/12157520). What individuals get (`/usage`, the claude.ai usage page) shows where you stand right now - but no history, no per-session costs, and no idea where you're heading before the limit hits. claumon is that missing dashboard, running locally on your machine.
 
-Single binary, no dependencies, no build step, no config required. Run it and open a browser tab.
+What sets it apart:
 
-It gives you rate limit gauges with usage forecasts, per-session token breakdowns, cost estimates, historical trends, conversation history, and a memory browser with relationship graph, health scores, and staleness alerts. Everything updates in real time via SSE. Daily aggregates are stored in SQLite so you can track usage over weeks, not just the current session.
+- **Live rate-limit gauges.** Session, weekly, and per-model utilization straight from the Claude OAuth usage API - measured, not estimated from logs.
+- **Forecasts you can check.** Projected utilization at reset with an 80% credible interval and ETA-to-threshold, from an empirical-Bayes model refit daily on your own usage history. The model is published ([MODEL.pdf](internal/forecast/MODEL.pdf)) and benchmarked out-of-sample with proper scoring rules - not a burn-rate extrapolation or a percentile heuristic.
+- **Your whole `~/.claude` footprint in one place.** Per-session token and cost breakdowns, historical trends in SQLite, running-process control, and a memory-file browser with health scores and a relationship graph.
+
+Everything updates in real time via SSE, and daily aggregates persist in SQLite so you can track usage over weeks, not just the current session. No Node, no Python, no build step, no config. Run it and open a browser tab.
+
+## How it compares
+
+Honest snapshot (June 2026), based on each project's documentation:
+
+| | claumon | [ccusage](https://github.com/ryoppippi/ccusage) | [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | [claude-usage](https://github.com/phuryn/claude-usage) |
+|---|---|---|---|---|
+| Interface | Local web UI | CLI reports | Terminal TUI | Local web UI |
+| Runtime | Single Go binary | Node (npx) | Python (pip/uv) | Python |
+| Rate limits | Live from OAuth usage API | Derived from local logs | Estimated from local logs | - |
+| Forecasting | Calibrated credible intervals, benchmarked ([spec](internal/forecast/MODEL.pdf)) | Burn-rate projection (live mode) | P90 percentile heuristic | - |
+| Cost & history | SQLite, daily aggregates, trends | JSONL reports | Session window | SQLite, charts |
+| Memory-file browser & graph | Yes | - | - | - |
+
+If you want quick CLI cost reports, ccusage is excellent and more battle-tested. claumon is for keeping a live dashboard open: where your limits stand, where they'll land, and what's in your `~/.claude`.
 
 <p align="center">
   <img src="assets/overview.png" alt="claumon dashboard" width="700"><br>

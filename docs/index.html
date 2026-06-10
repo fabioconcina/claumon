@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>claumon - Claude Code Dashboard</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%23da7756'/></svg>">
-<meta name="description" content="Real-time Claude Code dashboard. Single binary, zero config. Monitor API usage, token costs, sessions, and memory files.">
+<meta name="description" content="See where your Claude Code limits are headed before you hit them. Live rate-limit gauges, calibrated usage forecasts, session costs, and a memory browser. Single binary, zero config.">
 <meta property="og:title" content="claumon - Claude Code Dashboard">
-<meta property="og:description" content="Real-time Claude Code dashboard. Single binary, zero config. Monitor API usage, token costs, sessions, and memory files.">
+<meta property="og:description" content="See where your Claude Code limits are headed before you hit them. Live rate-limit gauges, calibrated usage forecasts, session costs, and a memory browser. Single binary, zero config.">
 <meta property="og:image" content="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/overview.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
@@ -369,7 +369,7 @@ footer a { color: var(--text); }
 <section class="hero">
   <div class="hero-badge">Open source &middot; MIT License</div>
   <h1><span>claumon</span></h1>
-  <p>Real-time Claude Code dashboard. Single binary, zero config, one browser tab.</p>
+  <p>See where your Claude Code limits are headed before you hit them. The usage dashboard individual Pro and Max plans don't get from Anthropic - single binary, zero config, one browser tab.</p>
   <div class="hero-pills">
     <span class="pill">Rate limit gauges</span>
     <span class="pill">Usage forecasts</span>
@@ -401,7 +401,7 @@ footer a { color: var(--text); }
   </figure>
   <figure>
     <img src="https://raw.githubusercontent.com/fabioconcina/claumon/main/assets/session-forecast.png" alt="claumon session forecast screenshot">
-    <figcaption>Session forecast: projected usage at reset with an 80% confidence interval.</figcaption>
+    <figcaption>Session forecast: projected usage at reset with an 80% credible interval.</figcaption>
   </figure>
 </section>
 
@@ -417,7 +417,7 @@ footer a { color: var(--text); }
     <div class="feature-card">
       <div class="feature-icon" style="background: rgba(125,191,184,0.15); color: var(--teal);">&#8599;</div>
       <h3>Usage forecasts</h3>
-      <p>An empirical-Bayes model projects where each limit window lands at reset, with an 80% credible band and ETA to threshold. Refit daily from your own past windows.</p>
+      <p>An empirical-Bayes model projects where each limit window lands at reset, with an 80% credible band and ETA to threshold. Refit daily from your own past windows, <a href="https://github.com/fabioconcina/claumon/blob/main/internal/forecast/MODEL.pdf">published as a spec</a>, and benchmarked out-of-sample.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon" style="background: rgba(232,200,114,0.15); color: var(--yellow);">&#9638;</div>
