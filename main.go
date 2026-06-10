@@ -153,6 +153,7 @@ func main() {
 	srv := server.New(cfg.ClaudeDir, st, webContent)
 	srv.Handlers.AuthProvider = provider
 	srv.Handlers.Version = version
+	srv.Handlers.ReleasesURL = updater.ReleasesURL()
 	srv.Handlers.SubscriptionType = creds.SubscriptionType
 	srv.Handlers.RateLimitTier = creds.RateLimitTier
 	srv.Handlers.StuckThreshold = time.Duration(cfg.StuckThresholdMins) * time.Minute
@@ -203,6 +204,9 @@ func main() {
 
 		go w.Start(ctx)
 	}
+
+	// Check GitHub for a newer release shortly after startup, then daily.
+	go checkUpdates(ctx, version, srv.Handlers, srv.Broker)
 
 	// Daily maintenance: refresh pricing, prune old data, refit forecast.
 	go func() {
@@ -273,6 +277,50 @@ func main() {
 		w.Close()
 	}
 	log.Printf("[shutdown] bye")
+}
+
+// checkUpdates polls GitHub for the latest release shortly after startup and
+// then once a day. When the running build is behind, it records the status on
+// the handlers (for /api/info) and broadcasts an SSE event so live pages light
+// up the update badge without a reload. Best-effort: failures are logged and
+// ignored, matching the pricing fetch.
+func checkUpdates(ctx context.Context, current string, handlers *server.Handlers, broker *server.SSEBroker) {
+	check := func() {
+		rel, err := updater.CheckLatest()
+		if err != nil {
+			log.Printf("[update] check failed: %v", err)
+			return
+		}
+		if !updater.NeedsUpdate(current, rel.TagName) {
+			return
+		}
+		handlers.SetUpdateStatus(rel.TagName, true)
+		broker.SendJSON("update_available", map[string]string{
+			"latest":  rel.TagName,
+			"current": current,
+			"url":     updater.ReleasesURL(),
+		})
+		log.Printf("[update] newer version available: %s (current %s)", rel.TagName, current)
+	}
+
+	// Small delay so startup isn't blocked on a network round-trip.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(15 * time.Second):
+	}
+	check()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			check()
+		}
+	}
 }
 
 func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, fcSvc *forecast.Service, interval time.Duration) {

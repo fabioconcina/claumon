@@ -30,6 +30,20 @@ type Handlers struct {
 	RateLimitTier    string
 	StuckThreshold   time.Duration
 	Forecast         *forecast.Service
+
+	ReleasesURL     string
+	updateMu        sync.RWMutex
+	latestVersion   string
+	updateAvailable bool
+}
+
+// SetUpdateStatus records the latest known release and whether the running
+// build is behind it. Safe for concurrent use with HandleInfo.
+func (h *Handlers) SetUpdateStatus(latest string, available bool) {
+	h.updateMu.Lock()
+	h.latestVersion = latest
+	h.updateAvailable = available
+	h.updateMu.Unlock()
 }
 
 type memoryCache struct {
@@ -284,11 +298,18 @@ func (h *Handlers) HandleSessionDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	isAPI := h.SubscriptionType == "" || h.SubscriptionType == "api"
+	h.updateMu.RLock()
+	latest := h.latestVersion
+	available := h.updateAvailable
+	h.updateMu.RUnlock()
 	info := map[string]interface{}{
 		"version":           h.Version,
 		"subscription_type": h.SubscriptionType,
 		"rate_limit_tier":   h.RateLimitTier,
 		"is_api_billing":    isAPI,
+		"update_available":  available,
+		"latest_version":    latest,
+		"releases_url":      h.ReleasesURL,
 	}
 	if h.AuthProvider != nil {
 		status, msg := h.AuthProvider.Status()

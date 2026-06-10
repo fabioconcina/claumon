@@ -50,6 +50,11 @@ func CheckLatest() (*Release, error) {
 	return &rel, nil
 }
 
+// ReleasesURL returns the GitHub "latest release" page for claumon.
+func ReleasesURL() string {
+	return fmt.Sprintf("https://github.com/%s/%s/releases/latest", repoOwner, repoName)
+}
+
 // AssetName returns the expected binary name for the current platform.
 func AssetName() string {
 	name := fmt.Sprintf("%s-%s-%s", repoName, runtime.GOOS, runtime.GOARCH)
