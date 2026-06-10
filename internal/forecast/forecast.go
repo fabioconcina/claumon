@@ -5,7 +5,6 @@
 package forecast
 
 import (
-	"math"
 	"time"
 )
 
@@ -14,7 +13,7 @@ import (
 // calibration semantics - bug fixes that match the spec don't count. The
 // CHANGELOG in MODEL.tex tracks what each bump means, and retired specs
 // live under internal/forecast/archive/<this-value>/.
-const ModelVersion = "v2.0"
+const ModelVersion = "v2.1"
 
 // UIThresholdPct is the crossing threshold (in percent) the dashboard forecasts
 // against. The gauge poller and the trajectory popup both use it, so the two
@@ -80,12 +79,14 @@ type Posterior struct {
 // and Upper are the 10th/90th percentiles of the monotone Monte Carlo terminal
 // distribution (see Run): because every increment is >= 0, Lower is naturally
 // >= u_now and the interval is right-skewed, replacing the clipped symmetric
-// z-interval of model v1.x. Upper is capped at 1.
+// z-interval of model v1.x. Both edges are reported uncapped (model v2.1):
+// values above 1 measure projected demand beyond the window limit, and capping
+// only the upper edge inverted the interval whenever p10 exceeded 1.
 type Forecast struct {
 	F      float64 // point forecast at reset (mean, unclipped)
 	SigmaF float64 // sqrt(rate-variance term + path-noise term)
 	Lower  float64 // 80% CI lower, from MC terminal p10 (>= u_now)
-	Upper  float64 // 80% CI upper, from MC terminal p90 (capped at 1)
+	Upper  float64 // 80% CI upper, from MC terminal p90 (uncapped)
 	DeltaT float64 // remaining horizon in hours
 }
 
@@ -241,16 +242,16 @@ func filterRecent(all []Snapshot, now time.Time, tau time.Duration) []Snapshot {
 
 // applyTerminalCI replaces the analytic symmetric z-interval that
 // ProjectForecast leaves on fc.Lower/fc.Upper with the monotone MC terminal
-// p10/p90 (the model v2.0 CI), capping the upper bound at 1. Both Run and
-// SampleFor call this so the gauge line and the modal footer report the same
-// 80% interval and can't drift apart. No-op when terminal is empty.
+// p10/p90 (the model v2.1 CI), both uncapped. Values above 1 measure projected
+// demand beyond the window limit; capping only the upper bound (v2.0) inverted
+// the interval when p10 exceeded 1. Both Run and SampleFor call this so the
+// gauge line and the modal footer report the same 80% interval and can't
+// drift apart. No-op when terminal is empty.
 func applyTerminalCI(fc *Forecast, terminal []float64) {
 	if len(terminal) == 0 {
 		return
 	}
-	lo, hi := terminalCI(terminal)
-	fc.Lower = lo
-	fc.Upper = math.Min(hi, 1)
+	fc.Lower, fc.Upper = terminalCI(terminal)
 }
 
 func clip01(x float64) float64 {

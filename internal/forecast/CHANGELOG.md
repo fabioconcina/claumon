@@ -8,7 +8,27 @@ ETAs, or calibration semantics, the prior `MODEL.tex` (and its PDF) moves to
 Bug fixes that bring the implementation back in line with the existing spec
 do **not** bump the model version — only changes to the spec itself do.
 
-## v2.0 - 2026-06-02 (current)
+## v2.1 - 2026-06-10 (current)
+
+Removes the cap at 1 on the reported 80% CI upper edge, so both interval
+edges are now the raw MC terminal percentiles (p10/p90), uncapped.
+
+- **Why.** The forecast measures projected *demand*, which can exceed the
+  window limit even though the physical gauge saturates at 100%, and the
+  dashboard deliberately reports overshoot (a bold "Projected 160% at reset")
+  because its magnitude is signal. With the point forecast and the lower
+  percentile uncapped, capping only the upper edge inverted the reported
+  interval whenever p10 exceeded 1 - in the field this rendered as
+  "80% CI 134%-100%".
+- **Edge-case table.** The "F ∉ [0, 1]" row ("clip for display") is replaced
+  by "F > 1: report as-is"; only the gauge ring saturates at 1.
+- **Unchanged.** The generative model, rate estimation, calibration, MC, and
+  ETA are all untouched: this is a reporting-convention change.
+  `ProjectForecast` (the analytic z-interval moment helper retained for
+  `benchtools`) keeps its clipped interval; the spec's reported CI never came
+  from it in v2.x.
+
+## v2.0 - 2026-06-02
 
 Replaces the Brownian path law with a **Gamma process** (a non-decreasing Lévy
 subordinator), so simulated utilization is monotone non-decreasing - the

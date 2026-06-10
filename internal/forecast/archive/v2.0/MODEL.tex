@@ -48,7 +48,7 @@
 
 \title{Rate-Limit Forecast Model}
 \author{claumon \texttt{internal/forecast}}
-\date{Model version \textbf{v2.1} \enspace - \enspace 2026-06-10}
+\date{Model version \textbf{v2.0} \enspace - \enspace 2026-06-02}
 
 \begin{document}
 \maketitle
@@ -283,14 +283,10 @@ noise is linear (dominates at short).
 \paragraph{80\% CI.} The interval is the 10th and 90th percentiles of the Monte
 Carlo terminal distribution $\{u_k(\Treset)\}$ (\S\ref{sec:eta}), not a Gaussian
 $z$-quantile. Because every increment is non-negative the lower percentile is
-$\ge \unow$ automatically (no clip) and the band is right-skewed. Both edges
-are reported as-is, with no cap at $1$ (v2.1): the forecast measures projected
-\emph{demand}, which can exceed the window limit even though the physical
-gauge saturates there, and overshoot magnitude is informative. v2.0 capped
-only the upper edge, which inverted the reported interval whenever the lower
-percentile itself exceeded $1$ (e.g.\ ``80\% CI $134\%$--$100\%$'').
-$\sigma_F$ above is retained as a symmetric moment summary (and to
-parameterise the MC draws); $F$ remains the reported point estimate.
+$\ge \unow$ automatically (no clip) and the band is right-skewed; only
+the upper edge is capped at $1$. $\sigma_F$ above is retained as a symmetric
+moment summary (and to parameterise the MC draws); $F$ remains the reported
+point estimate.
 
 \section{Calibration of $\sigsessionsq$}\label{sec:calib}
 
@@ -486,9 +482,8 @@ $\Cthr \leq \unow$
 $\rpost \leq 0$
   & Gamma rate degenerates to $0$ (no growth): MC paths stay flat, so
     $p_\infty \to 1$ and the ETA is \texttt{nil} \\
-$F > 1$
-  & Report as-is: overshoot is projected demand beyond the limit and its
-    magnitude is signal; only the gauge ring saturates at $1$ \\
+$F \notin [0, 1]$
+  & Clip for display; retain unclipped for downstream \\
 \bottomrule
 \end{tabular}
 \end{center}

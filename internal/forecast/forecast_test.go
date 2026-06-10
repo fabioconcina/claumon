@@ -533,7 +533,7 @@ func TestForecastCILowerNeverBelowUNow(t *testing.T) {
 
 func TestRunForecastCIWellFormed(t *testing.T) {
 	// Through the full Run path: the CI now comes from the MC terminal
-	// distribution, so uNow <= Lower <= F <= Upper <= 1.
+	// distribution, so uNow <= Lower <= F <= Upper.
 	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	reset := time.Date(2026, 5, 24, 16, 0, 0, 0, time.UTC)
 	base := now.Add(-30 * time.Minute)
@@ -559,8 +559,45 @@ func TestRunForecastCIWellFormed(t *testing.T) {
 	if fc.Upper < fc.F-1e-9 {
 		t.Errorf("Upper should be >= F: upper=%v F=%v", fc.Upper, fc.F)
 	}
-	if fc.Upper > 1+1e-9 {
-		t.Errorf("Upper exceeds 1: %v", fc.Upper)
+}
+
+func TestRunForecastCIOvershootNotInverted(t *testing.T) {
+	// Regression: high utilization plus a steep rate projects demand well past
+	// 100%. v2.0 capped only the upper edge at 1, so once p10 exceeded 1 the
+	// reported interval inverted (e.g. "80% CI 134%-100%"). v2.1 reports both
+	// edges uncapped: the interval must bracket F and stay ordered.
+	now := time.Date(2026, 6, 10, 21, 0, 0, 0, time.UTC)
+	reset := time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)
+	base := now.Add(-30 * time.Minute)
+	res, ok := Run(Input{
+		Now:   now,
+		Reset: reset,
+		UNow:  0.92,
+		Snapshots: []Snapshot{
+			{Time: base, U: 0.80},
+			{Time: base.Add(10 * time.Minute), U: 0.84},
+			{Time: base.Add(20 * time.Minute), U: 0.88},
+			{Time: base.Add(30 * time.Minute), U: 0.92},
+		},
+		Prior:       Prior{Mu0: 0.20, Tau0Sq: 3.6e-3, NSessions: 20},
+		Calibration: Calibration{SigmaSessionSq: 2.5e-3, BarTauSq: 3.6e-3},
+		Thresholds:  []float64{1.0},
+	}, DefaultConfig())
+	if !ok {
+		t.Fatal("Run returned !ok")
+	}
+	fc := res.Forecast
+	if fc.F <= 1 {
+		t.Fatalf("scenario should project past 100%%, got F=%v", fc.F)
+	}
+	if fc.Upper < fc.Lower {
+		t.Errorf("inverted CI: upper=%v < lower=%v", fc.Upper, fc.Lower)
+	}
+	if fc.Lower > fc.F+1e-9 || fc.Upper < fc.F-1e-9 {
+		t.Errorf("CI [%v, %v] does not bracket F=%v", fc.Lower, fc.Upper, fc.F)
+	}
+	if fc.Upper <= 1 {
+		t.Errorf("upper edge should be uncapped and exceed 1, got %v", fc.Upper)
 	}
 }
 
