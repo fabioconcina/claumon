@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -32,16 +33,23 @@ func TestBuildGraphNodes(t *testing.T) {
 }
 
 func TestBuildGraphIndexLinks(t *testing.T) {
+	// Build OS-native paths: BuildGraph resolves links via filepath.Dir/Join,
+	// which normalize separators per platform (\ on Windows). Hardcoding
+	// forward slashes would not survive that round-trip on Windows.
+	memDir := filepath.Join("proj", "memory")
+	indexPath := filepath.Join(memDir, "MEMORY.md")
+	notePath := filepath.Join(memDir, "note.md")
+
 	files := []*MemoryFile{
-		{Path: "/proj/memory/MEMORY.md", Project: "proj", Category: "auto-memory", Content: "- [note](note.md)"},
-		{Path: "/proj/memory/note.md", Project: "proj", Category: "memory-file"},
+		{Path: indexPath, Project: "proj", Category: "auto-memory", Content: "- [note](note.md)"},
+		{Path: notePath, Project: "proj", Category: "memory-file"},
 	}
 
 	data := BuildGraph(files)
 
 	var foundLink bool
 	for _, e := range data.Edges {
-		if e.Type == "index-link" && e.Source == "/proj/memory/MEMORY.md" && e.Target == "/proj/memory/note.md" {
+		if e.Type == "index-link" && e.Source == indexPath && e.Target == notePath {
 			foundLink = true
 		}
 	}
