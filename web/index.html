@@ -2760,7 +2760,10 @@ function openForecastModal(gauge) {
     .then(r => r.json())
     .then(resp => {
       if (!resp.available || !resp.data) {
-        body.innerHTML = '<div class="fc-empty">No forecast available yet.</div>';
+        const msg = resp.reason === 'at_limit'
+          ? 'Limit reached — already at 100%. Nothing left to forecast until reset.'
+          : 'No forecast available yet.';
+        body.innerHTML = '<div class="fc-empty">' + msg + '</div>';
         return;
       }
       sub.textContent = 'model ' + (resp.data.model_version || '?');

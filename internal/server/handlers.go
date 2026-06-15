@@ -396,6 +396,14 @@ func (h *Handlers) HandleForecastSample(w http.ResponseWriter, r *http.Request) 
 	// Cap each trajectory's length so weekly (~600 5-min steps) doesn't ship MB.
 	const maxSteps = 80
 
+	// Already at (or above) the threshold: there's nothing to simulate, since the
+	// MC requires headroom (threshold > u_now). Tell the frontend so it can show a
+	// "limit reached" message instead of the generic "no forecast" empty state.
+	if uNowPct >= thresholdPct {
+		writeJSON(w, map[string]interface{}{"available": false, "reason": "at_limit", "data": nil})
+		return
+	}
+
 	sample, ok := h.Forecast.SampleFor(gauge, resetAt, uNowPct, time.Now(), thresholdPct, maxTraj, maxSteps)
 	if !ok {
 		writeJSON(w, map[string]interface{}{"available": false, "data": nil})

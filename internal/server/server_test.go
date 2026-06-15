@@ -10,8 +10,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fabioconcina/claumon/internal/forecast"
 	"github.com/fabioconcina/claumon/internal/store"
 )
+
+// emptyForecastStore is a no-history stub: enough to give Handlers a non-nil
+// *forecast.Service so HandleForecastSample runs past its nil guard.
+type emptyForecastStore struct{}
+
+func (emptyForecastStore) GetWindowSnapshots(gauge, resetAt string, since time.Time) ([]forecast.StoreSnapshot, error) {
+	return nil, nil
+}
+func (emptyForecastStore) GetCompletedSessions(gauge string, before time.Time, limit int) ([]forecast.StoreSession, error) {
+	return nil, nil
+}
 
 func setupTestServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
@@ -87,6 +99,34 @@ func TestHandleUsageWithData(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&result)
 	if result["session_pct"] != 42.5 {
 		t.Errorf("session_pct = %v, want 42.5", result["session_pct"])
+	}
+}
+
+// At 100% usage there's no headroom to simulate, so the sample endpoint must
+// report available=false with reason "at_limit" — letting the modal show a
+// meaningful "limit reached" message instead of a blank/"no forecast" state.
+func TestHandleForecastSampleAtLimit(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	srv.Handlers.Forecast = forecast.NewService(emptyForecastStore{}, forecast.DefaultConfig())
+	srv.Handlers.SetLatestUsage(map[string]interface{}{
+		"session_pct":      100.0,
+		"session_reset_at": time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+	})
+
+	req := httptest.NewRequest("GET", "/api/forecast/sample?gauge=session", nil)
+	w := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var result map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&result)
+	if result["available"] != false {
+		t.Errorf("available = %v, want false at 100%%", result["available"])
+	}
+	if result["reason"] != "at_limit" {
+		t.Errorf("reason = %v, want %q at 100%%", result["reason"], "at_limit")
 	}
 }
 
