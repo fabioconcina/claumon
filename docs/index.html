@@ -374,13 +374,9 @@ footer a { color: var(--text); }
     <span class="pill">Rate limit gauges</span>
     <span class="pill">Usage forecasts</span>
     <span class="pill">Token costs</span>
-    <span class="pill">Session history</span>
     <span class="pill">Memory browser</span>
-    <span class="pill">Memory health scores</span>
     <span class="pill">Live updates</span>
-    <span class="pill">Background service</span>
-    <span class="pill">Homebrew</span>
-    <span class="pill">macOS &middot; Linux &middot; Windows</span>
+    <span class="pill">VS Code extension</span>
   </div>
   <div class="cta-group">
     <a href="https://github.com/fabioconcina/claumon/releases/latest" class="btn btn-primary">Download</a>
@@ -445,14 +441,11 @@ footer a { color: var(--text); }
       <p>Server-Sent Events push changes instantly. No polling, no manual refresh. Gauges, sessions, and memories update live.</p>
     </div>
     <div class="feature-card">
-      <div class="feature-icon" style="background: rgba(143,188,143,0.15); color: var(--green);">&#9654;</div>
-      <h3>Background service</h3>
-      <p>Run <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;">claumon service install</code> once. Dashboard starts on login, restarts on crash. Works on macOS, Linux, and Windows.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background: rgba(232,200,114,0.15); color: var(--yellow);">&#8635;</div>
-      <h3>Easy updates</h3>
-      <p>Update via <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;">brew upgrade claumon</code>, or <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;">claumon update</code> if installed from a binary.</p>
+      <div class="feature-icon" style="background: rgba(125,191,184,0.15); color: var(--teal);">&#9632;</div>
+      <h3>VS Code extension</h3>
+      <p>A companion extension shows live usage and the forecast in your editor status bar, with the dashboard embedded in a panel. Install with one command (macOS/Linux):</p>
+      <pre style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin:10px 0 0;overflow-x:auto;font-size:11px;line-height:1.5;color:var(--text-bright);"><code>curl -fsSL "$(curl -fsSL https://api.github.com/repos/fabioconcina/claumon/releases | grep -o 'https://github.com/[^"]*\.vsix' | head -1)" -o /tmp/claumon.vsix &amp;&amp; code --install-extension /tmp/claumon.vsix</code></pre>
+      <p style="margin-top:8px;font-size:13px;"><a href="https://github.com/fabioconcina/claumon/tree/main/extension#install">Windows &amp; manual install &rarr;</a></p>
     </div>
   </div>
 </section>
@@ -470,7 +463,7 @@ footer a { color: var(--text); }
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-arm64">arm64</a>
         <a href="https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-amd64">amd64</a>
       </div>
-      <div class="dl-note"><code>chmod +x claumon-darwin-*</code></div>
+      <div class="dl-note"><code>chmod +x claumon-darwin-*</code>. If blocked by Gatekeeper: right-click &rarr; Open, or run <code>xattr -d com.apple.quarantine claumon-darwin-*</code></div>
     </div>
     <div class="platform-card">
       <img src="https://cdn.simpleicons.org/linux/d4c5b9" width="32" height="32" alt="Linux">
@@ -517,7 +510,7 @@ footer a { color: var(--text); }
       <div class="step-num">3</div>
       <div class="step-text">
         <h3>Keep it updated</h3>
-        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">brew upgrade claumon</code> and you're done.</p>
+        <p><code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">brew update &amp;&amp; brew upgrade claumon</code>, or <code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:13px;">claumon update</code> for binary installs.</p>
       </div>
     </div>
   </div>

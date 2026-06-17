@@ -62,11 +62,13 @@ claumon
 # macOS (Apple Silicon)
 curl -Lo claumon https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-arm64
 chmod +x claumon
+# If blocked by Gatekeeper: right-click -> Open, or run: xattr -d com.apple.quarantine claumon
 ./claumon
 
 # macOS (Intel)
 curl -Lo claumon https://github.com/fabioconcina/claumon/releases/latest/download/claumon-darwin-amd64
 chmod +x claumon
+# If blocked by Gatekeeper: right-click -> Open, or run: xattr -d com.apple.quarantine claumon
 ./claumon
 
 # Linux (x86_64)
@@ -90,6 +92,14 @@ claumon
 Open [http://localhost:3131](http://localhost:3131) in your browser.
 
 claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works. Only the API usage gauges are unavailable.
+
+### Command-line flags
+
+| Flag | Description |
+|------|-------------|
+| `--open` | Open the dashboard in your browser on startup |
+| `--port` | Override the dashboard port (default from config) |
+| `--db` | Override the DB path (e.g. a copy, to run a test instance) |
 
 ## Run as a background service
 
@@ -142,6 +152,27 @@ claumon service uninstall  # stop and remove
 
 No root or admin required on any platform.
 
+## VS Code extension
+
+A companion VS Code extension puts your live usage in the editor status bar and
+embeds the dashboard in a panel, so you do not need a browser tab open. The
+status bar shows the current percentage and, when a forecast is available, the
+projected percentage at reset (e.g. `45%->72% session`); the hover tooltip adds
+the session/weekly breakdown, reset times, and the forecast detail.
+
+It is a **client only** and connects to a claumon server you are already running
+(default `localhost:3131`); it does not start or bundle claumon.
+
+Install it with one command (grabs the latest `.vsix` from GitHub and installs
+it via the `code` CLI):
+
+```bash
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/fabioconcina/claumon/releases | grep -o 'https://github.com/[^"]*\.vsix' | head -1)" -o /tmp/claumon.vsix && code --install-extension /tmp/claumon.vsix
+```
+
+On Windows, or for the manual "Install from VSIX..." steps, see
+[`extension/`](extension/), where source and build instructions also live.
+
 ## Self-update
 
 ```bash
@@ -172,61 +203,32 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 
 ## What it tracks
 
-### Rate limits (live from Claude API)
+### Rate limits (live from the Claude API)
 
-- **Session usage** - 5-hour sliding window utilization with reset countdown
-- **Weekly usage** - 7-day window utilization with reset countdown
-- **Per-model quotas** - separate Opus and Sonnet weekly limits (when applicable)
-- **Extra usage credits** - monthly limit and spend (if enabled)
-Gauges are color-coded: green (<50%), yellow (50–80%), red (>80%).
+- **Session** (5-hour) and **weekly** (7-day) utilization with reset countdowns
+- **Per-model** Opus/Sonnet weekly quotas and **extra-usage credits**, when applicable
+- Gauges color-coded: green (<50%), yellow (50–80%), red (>80%)
 
 ### Forecasts
 
-- **Projected utilization at reset** - an 80% credible interval and ETA to threshold for each rate-limit window, so you can see where you'll land before you get there.
-- **Empirical-Bayes model, refit daily** from your own past windows, over a monotone (non-decreasing) usage process so the interval respects that utilization only grows within a window. Full spec in [`internal/forecast/MODEL.pdf`](internal/forecast/MODEL.pdf) (LaTeX source: [`MODEL.tex`](internal/forecast/MODEL.tex)).
-- **Benchmarked out-of-sample** with `claumon bench` - leave-one-out and temporal-holdout protocols, proper scoring (CRPS/pinball) with coverage and bias breakdowns.
+- **Projected utilization at reset** with an 80% credible interval and ETA-to-threshold for each window, so you see where you'll land before you get there
+- An **empirical-Bayes model refit daily** on your own past windows, over a monotone usage process; full spec in [`MODEL.pdf`](internal/forecast/MODEL.pdf) and benchmarked out-of-sample via `claumon bench` (CRPS/pinball, coverage, bias)
 
-### Token usage (from session files)
+### Tokens & cost
 
-- **Input / output / cache read / cache write** tokens per session
-- **Estimated equivalent API cost** using current model pricing
-- **Daily aggregates** with 14-day trend charts
-- **Activity heatmap** - 24-hour breakdown of token activity by hour
+- Per-session input / output / cache token breakdowns with **estimated API-equivalent cost**
+- **Daily aggregates** with 14-day trend charts and a 24-hour activity heatmap
 
-### Sessions
+### Sessions & processes
 
-- **Active sessions table** - project, model, tokens, cost, messages, last activity
-- **Today / Recent toggle** - switch between today's sessions and the 50 most recent across all time
-- **Running process detection** - shows which sessions are actively running with green "active" badge
-- **Session detail view** - full message timeline with per-message token counts and tool usage
-- **Automatic discovery** - watches `~/.claude/projects/` for new and updated sessions
+- Active-sessions table (project, model, tokens, cost, messages, last activity) with a today/recent toggle and a full per-message detail view, auto-discovered from `~/.claude/projects/`
+- **Running-process detection** with a stop button (SIGINT, conversation preserved on disk)
 
-### Running processes
+### Memory tools
 
-- **Live process table** - shows all running Claude Code processes with PID, chat title, project, type, and uptime
-- **Stop button** - send SIGINT to gracefully stop any running process (conversation is preserved on disk)
-- **Auto-refresh** - updates via SSE and periodic polling
-
-### Memory browser
-
-- **All memory files** - CLAUDE.md, rules, auto-memory indexes, per-project memories
-- **Search** across content, path, project name, and frontmatter
-- **Filter by category** - CLAUDE.md, Rules, Index, Memory
-- **Staleness indicators** - green (today), gray (<7d), yellow (7–30d), red (>30d)
-- **Staleness alerts** - broken MEMORY.md links, orphaned files, index mismatches
-- **VS Code integration** - click to open files in your editor via `vscode://` links
-
-### Memory health scores
-
-- **Per-file grading** - each memory file gets a letter grade (A–F) based on freshness, structure, specificity, and connectedness
-- **Improvement suggestions** - actionable tips for low-scoring files (add frontmatter, link from MEMORY.md, etc.)
-
-### Memory graph
-
-- **Interactive visualization** - nodes are memory files, edges show relationships
-- **Project filters** - focus on specific projects
-- **Clickable legend** - toggle node types on/off
-- **Click to navigate** - click a node to jump to its file in the memory browser
+- Browser for all memory files (CLAUDE.md, rules, per-project memories) with search, category filters, and staleness indicators
+- **Health scores** (A–F per file with improvement tips) and **staleness alerts** (broken MEMORY.md links, orphans, index mismatches)
+- An **interactive relationship graph** with project filters and click-to-navigate; click any file to open it in your editor via `vscode://`
 
 ## Keyboard shortcuts
 

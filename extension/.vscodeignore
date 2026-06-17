@@ -1,0 +1,12 @@
+# Only ship the bundled extension. Everything else (incl. the parent Go repo,
+# which is above this folder and never packaged) is excluded.
+.vscode/**
+src/**
+node_modules/**
+tsconfig.json
+.gitignore
+.npmrc
+package-lock.json
+**/*.map
+**/*.ts
+.eslintrc*

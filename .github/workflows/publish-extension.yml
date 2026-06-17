@@ -1,0 +1,68 @@
+name: Release Extension
+
+# Packages the VS Code extension (extension/) into a .vsix and attaches it to a
+# GitHub Release. Trigger by pushing a tag like `ext-v0.1.0`, or run manually
+# (manual runs just upload the .vsix as a workflow artifact, no Release).
+#
+# The official VS Code Marketplace is optional: the final step publishes there
+# only if a `VSCE_PAT` secret is configured, so it silently no-ops until you add
+# one. The .vsix on the Release works in stock VS Code today via
+# "Extensions: Install from VSIX..." or `code --install-extension`.
+on:
+  push:
+    tags:
+      - "ext-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Locked, reproducible install. .npmrc sets ignore-scripts=true, so no
+      # dependency lifecycle scripts run in CI.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Builds claumon-<version>.vsix (runs vscode:prepublish -> tsc first).
+      - name: Package VSIX
+        run: npx --yes @vscode/vsce@^3.0.0 package
+
+      # Always available for download, including on manual-dispatch runs.
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claumon-vsix
+          path: extension/*.vsix
+
+      # On an ext-v* tag: create the GitHub Release and attach the .vsix.
+      - name: Attach .vsix to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/ext-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" ./*.vsix \
+            --title "VS Code extension $GITHUB_REF_NAME" \
+            --notes $'Install in VS Code: download the .vsix below, then run **Extensions: Install from VSIX...** from the Command Palette, or:\n\n```\ncode --install-extension claumon-*.vsix\n```'
+
+      # Optional: publish to the official Marketplace, but only if a token is set.
+      # Reuses the already-built .vsix so nothing is rebuilt.
+      - name: Publish to VS Code Marketplace
+        if: ${{ env.VSCE_PAT != '' }}
+        run: npx --yes @vscode/vsce@^3.0.0 publish --packagePath ./*.vsix --pat "$VSCE_PAT"

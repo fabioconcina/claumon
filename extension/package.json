@@ -1,0 +1,86 @@
+{
+  "name": "claumon",
+  "displayName": "Claumon",
+  "description": "Live Claude Code usage, cost, and session monitor in your status bar and a dashboard panel, powered by a running claumon server.",
+  "version": "0.1.0",
+  "publisher": "fabioconcina",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fabioconcina/claumon.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "usage",
+    "monitor",
+    "dashboard"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Claumon makes network requests to the configured host and embeds it in a webview, so it stays disabled until the workspace is trusted."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "claumon.openDashboard",
+        "title": "Claumon: Open Dashboard"
+      },
+      {
+        "command": "claumon.reconnect",
+        "title": "Claumon: Reconnect"
+      }
+    ],
+    "configuration": {
+      "title": "Claumon",
+      "properties": {
+        "claumon.host": {
+          "type": "string",
+          "default": "localhost",
+          "scope": "machine",
+          "description": "Hostname where the claumon server is running. Machine-scoped: cannot be set per-workspace, so an untrusted repo cannot redirect the extension to another host."
+        },
+        "claumon.port": {
+          "type": "number",
+          "default": 3131,
+          "scope": "machine",
+          "description": "Port where the claumon server is listening. Machine-scoped: cannot be set per-workspace."
+        },
+        "claumon.statusBar.metric": {
+          "type": "string",
+          "enum": [
+            "session",
+            "weekly"
+          ],
+          "default": "session",
+          "description": "Which usage metric to show in the status bar item."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p tsconfig.json",
+    "watch": "tsc -w -p tsconfig.json",
+    "vscode:prepublish": "npm run compile",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.85.0",
+    "typescript": "5.9.3"
+  }
+}

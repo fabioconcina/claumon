@@ -32,6 +32,8 @@ Single `main.go` orchestrates 4 goroutines (SSE broker, usage API poller, file w
 
 Frontend is a single `web/index.html` embedded via `//go:embed`. No build step, no external JS deps.
 
+`extension/` is a separate VS Code extension (TypeScript): a thin client that reads the same `/api/usage` + SSE feed and renders usage/forecast in the status bar plus an embedded dashboard panel. It has its own Node toolchain, version, and lockfile, and **zero runtime dependencies** (compiled with `tsc`, not bundled). It is not part of the Go build and is published separately (see the `ext-v*` tag in `.github/workflows/publish-extension.yml`).
+
 ## Conventions
 
 - Log format: `log.Printf("[tag] message", ...)` with tags like `[poll]`, `[watcher]`, `[memory]`, `[auth]`, `[backfill]`, `[aggregate]`

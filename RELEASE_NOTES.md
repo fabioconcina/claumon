@@ -1,23 +1,19 @@
-## Watcher CPU fix, forecast modal at the limit, Windows test fix
+## VS Code extension
 
-- **Watcher no longer pegs a core on an active session.** A continuously
-  written session JSONL emitted Write events many times per second; the old
-  per-path cooldown still let one through every 500ms, and each dispatch
-  re-parsed every session file. Replaced with a trailing-edge debouncer
-  (fires 750ms after writes go idle, capped at a 3s max-wait so a perpetually
-  hot file still refreshes). Measured on an active session: ~103% of one core
-  down to ~13%.
+- **New: a companion VS Code extension.** Your live session/weekly usage now
+  shows in the editor status bar, with the forecast projection inline
+  (e.g. `45%->72% session`) and a hover tooltip that breaks down session/weekly
+  usage, reset times, and the forecast (projected % with its 80% CI and ETA).
+  `Claumon: Open Dashboard` embeds the full dashboard in an editor panel. It's a
+  thin client over the same `/api/usage` + SSE feed, connects to a claumon
+  server you're already running (default `localhost:3131`), and ships with zero
+  runtime dependencies. Install it with a single command (it fetches the latest
+  `.vsix` and runs `code --install-extension`) - see the
+  [README](https://github.com/fabioconcina/claumon#vs-code-extension).
 
-- **The forecast modal no longer goes blank at 100% usage.** At the limit
-  there's no headroom to simulate, so the sample endpoint used to return a
-  bare "unavailable" that rendered as the generic "No forecast available yet."
-  empty state - looking broken right when the gauge is pinned. It now reports
-  an explicit at-limit reason and the modal shows "Limit reached - already at
-  100%. Nothing left to forecast until reset."
+- **Docs refresh.** Tightened the README feature list, streamlined the landing
+  page and its install steps, and documented the macOS Gatekeeper unblock step
+  alongside the existing Windows one.
 
-- **Windows test fix.** `TestBuildGraphIndexLinks` hardcoded forward-slash
-  paths, but `BuildGraph` normalizes separators via `filepath.Dir/Join`, so
-  the test failed on Windows only (production was unaffected). The test now
-  builds OS-native paths.
-
-No forecast-model, pricing, or storage changes.
+No server, forecast-model, pricing, or storage changes - the binary is unchanged
+from the previous release; this release adds the VS Code extension and docs.
