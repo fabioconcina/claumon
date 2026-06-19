@@ -1,5 +1,5 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/fabioconcina/claumon)](https://goreportcard.com/report/github.com/fabioconcina/claumon)
-[![GitHub release](https://img.shields.io/github/v/release/fabioconcina/claumon)](https://github.com/fabioconcina/claumon/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/fabioconcina/claumon?filter=!ext-*)](https://github.com/fabioconcina/claumon/releases/latest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/fabioconcina/claumon)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-brightgreen)](https://github.com/fabioconcina/claumon/releases/latest)
