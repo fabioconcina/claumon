@@ -2,7 +2,7 @@
   "name": "claumon",
   "displayName": "Claumon",
   "description": "Live Claude Code usage, cost, and session monitor in your status bar and a dashboard panel, powered by a running claumon server.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "fabioconcina",
   "license": "MIT",
   "icon": "icon.png",

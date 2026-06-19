@@ -79,13 +79,19 @@ export class StatusBar {
     const projText =
       fc && typeof fc.projected_pct === "number" ? `→${Math.round(fc.projected_pct)}%` : "";
 
+    // Two orthogonal signals. Background = severity (max of current usage and
+    // forecast); icon = whether the trajectory is still working against us.
+    // A red-but-pulse badge means "high now, but you've eased off"; red-and-
+    // flame means "high and still climbing into the wall".
     const high = typeof pct === "number" && pct >= 90;
     const warn = typeof pct === "number" && pct >= 75;
+    const forecastBad = typeof fc?.projected_pct === "number" && fc.projected_pct >= 100;
 
-    this.item.text = `$(pulse) ${pctText}${projText} ${label}`;
+    const icon = forecastBad ? "$(flame)" : "$(pulse)";
+    this.item.text = `${icon} ${pctText}${projText} ${label}`;
     this.item.backgroundColor = high
       ? new vscode.ThemeColor("statusBarItem.errorBackground")
-      : warn
+      : warn || forecastBad
         ? new vscode.ThemeColor("statusBarItem.warningBackground")
         : undefined;
 

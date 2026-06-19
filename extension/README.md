@@ -39,7 +39,10 @@ Install from VSIX...** from the Command Palette.
   shows the projected percentage at reset (e.g. `45%->72% session`). The tooltip
   breaks down session/weekly (and Opus/Sonnet) percentages, reset times, the
   forecast (projected % with its 80% confidence interval and threshold ETA), and
-  any auth or poll errors. It turns yellow at >= 75% and red at >= 90%.
+  any auth or poll errors. It turns yellow at >= 75% and red at >= 90% of
+  current usage, and also turns yellow when the forecast projects you'll exceed
+  the limit before the window resets - showing a flame icon while you're still
+  on track to hit it.
 - **Dashboard panel** (`Claumon: Open Dashboard`) embedding the live claumon web
   UI. If the server is not reachable, it shows an offline message with a Retry
   button.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 - 2026-06-19
+
+### Added
+
+- **Forecast-aware status bar.** The badge now reacts to where you're _projected_ to land, not just current usage: it turns yellow when the forecast projects you'll exceed the limit before the window resets, even while current usage is still low. A flame icon (replacing the usual pulse) shows whenever the trajectory is still working against you, so a red-and-flame badge ("high and still climbing") reads differently from red-and-pulse ("high, but you've eased off"). Background severity is the worst of current usage and the forecast; the icon tracks the forecast independently.
+
 ## 0.1.0 - 2026-06-17
 
 First release. A thin VS Code client for a running [claumon](https://github.com/fabioconcina/claumon) server.
