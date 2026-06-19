@@ -994,11 +994,14 @@ tr.clickable { cursor: pointer; }
           <label style="font-size:11px;font-weight:400;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;gap:4px">
             <input type="checkbox" id="billable-toggle" style="accent-color:var(--accent)"> Billable only
           </label>
+          <span id="tokens-total" style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text-dim)"></span>
         </h3>
         <div id="chart-tokens"></div>
       </div>
       <div class="chart-card">
-        <h3>Equiv. API Cost (14 days)</h3>
+        <h3 style="display:flex;align-items:center;gap:12px">Equiv. API Cost (14 days)
+          <span id="cost-total" style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text-dim)"></span>
+        </h3>
         <div id="chart-cost"></div>
       </div>
     </div>
@@ -1398,11 +1401,26 @@ function renderHeatmap(hours) {
 
 function renderTokensChart() {
   const billable = document.getElementById('billable-toggle').checked;
+  const keys = billable
+    ? ['input_tokens', 'output_tokens', 'cache_create_tokens']
+    : ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_create_tokens'];
+  const total = historyData.reduce((sum, d) =>
+    sum + keys.reduce((s, k) => s + (d[k] || 0), 0), 0);
+  document.getElementById('tokens-total').innerHTML = historyData.length
+    ? 'Total <b style="color:var(--text-bright);font-weight:600">' + fmtNum(total) + '</b>'
+    : '';
   if (billable) {
     renderBillableChart('chart-tokens', historyData);
   } else {
     renderStackedBarChart('chart-tokens', historyData);
   }
+}
+
+function renderCostTotal(data) {
+  const total = data.reduce((sum, d) => sum + (d.cost_usd || 0), 0);
+  document.getElementById('cost-total').innerHTML = data.length
+    ? 'Total <b style="color:var(--text-bright);font-weight:600">$' + total.toFixed(2) + '</b>'
+    : '';
 }
 
 document.getElementById('billable-toggle').addEventListener('change', renderTokensChart);
@@ -2550,6 +2568,7 @@ function fetchAll() {
     historyData = data;
     renderTokensChart();
     renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
+    renderCostTotal(data);
   }).catch(() => {});
 
   fetch('/api/usage').then(r => r.json()).then(updateUsageGauges).catch(() => {});
@@ -2715,6 +2734,7 @@ setInterval(() => {
       historyData = data;
       renderTokensChart();
       renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
+      renderCostTotal(data);
     }
   }).catch(() => {});
 }, 60000);
