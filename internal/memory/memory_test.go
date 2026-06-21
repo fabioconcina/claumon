@@ -3,6 +3,7 @@ package memory
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -170,5 +171,50 @@ func TestDiscoverAll(t *testing.T) {
 				t.Error("note.md HTMLContent should not be empty")
 			}
 		}
+	}
+}
+
+func TestDeleteFile(t *testing.T) {
+	dir := t.TempDir()
+	projDir := filepath.Join(dir, "projects", "Users-fabio-Projects-test")
+	memDir := filepath.Join(projDir, "memory")
+	os.MkdirAll(memDir, 0755)
+	notePath := filepath.Join(memDir, "note.md")
+	os.WriteFile(notePath, []byte("---\nname: test note\n---\nA note."), 0644)
+	indexPath := filepath.Join(memDir, "MEMORY.md")
+	os.WriteFile(indexPath, []byte("# Index\n- [A note](note.md) - hook\n- [Keep me](other.md) - hook\n"), 0644)
+
+	// The auto-memory index is protected: deletion is refused and it stays put.
+	if err := DeleteFile(dir, indexPath); err == nil {
+		t.Error("DeleteFile() deleted the protected MEMORY.md index, want error")
+	}
+	if _, err := os.Stat(indexPath); err != nil {
+		t.Errorf("MEMORY.md was removed despite being protected: %v", err)
+	}
+
+	// Deleting a known memory file succeeds and removes it from disk.
+	if err := DeleteFile(dir, notePath); err != nil {
+		t.Fatalf("DeleteFile() error: %v", err)
+	}
+	if _, err := os.Stat(notePath); !os.IsNotExist(err) {
+		t.Errorf("note.md still exists after delete (stat err = %v)", err)
+	}
+	// The pointer line should be pruned from MEMORY.md, leaving other links.
+	idx, _ := os.ReadFile(indexPath)
+	if strings.Contains(string(idx), "(note.md)") {
+		t.Errorf("MEMORY.md still references deleted note.md:\n%s", idx)
+	}
+	if !strings.Contains(string(idx), "(other.md)") {
+		t.Errorf("MEMORY.md lost an unrelated pointer line:\n%s", idx)
+	}
+
+	// An unknown / out-of-scope path is refused, and the file is left untouched.
+	outside := filepath.Join(dir, "outside.md")
+	os.WriteFile(outside, []byte("not a memory"), 0644)
+	if err := DeleteFile(dir, outside); err == nil {
+		t.Error("DeleteFile() accepted an unknown path, want error")
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("outside.md was removed despite being out of scope: %v", err)
 	}
 }

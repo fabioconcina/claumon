@@ -246,6 +246,28 @@ func (h *Handlers) HandleMemories(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, files)
 }
 
+func (h *Handlers) HandleDeleteMemory(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Path == "" {
+		writeJSONError(w, "missing path", http.StatusBadRequest)
+		return
+	}
+
+	if err := memory.DeleteFile(h.claudeDir, req.Path); err != nil {
+		writeJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	h.RefreshMemories()
+	log.Printf("[memory] Deleted %s", req.Path)
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
 func (h *Handlers) HandleMemoriesStaleness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, h.getMemories().staleness)
 }

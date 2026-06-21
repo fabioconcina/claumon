@@ -35,6 +35,7 @@ func New(claudeDir string, st *store.Store, webFS fs.FS) *Server {
 	mux.HandleFunc("GET /api/memories/consolidation", handlers.HandleMemoriesConsolidation)
 	mux.HandleFunc("GET /api/memories/health", handlers.HandleMemoriesHealth)
 	mux.HandleFunc("GET /api/memories/search", handlers.HandleMemoriesSearch)
+	mux.HandleFunc("POST /api/memories/delete", handlers.HandleDeleteMemory)
 	mux.HandleFunc("GET /api/sessions/{id}", handlers.HandleSessionDetail)
 	mux.HandleFunc("POST /api/sessions/{id}/kill", handlers.HandleKillSession)
 	mux.HandleFunc("GET /api/processes", handlers.HandleProcesses)

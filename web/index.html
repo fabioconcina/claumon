@@ -584,6 +584,19 @@ tr.clickable { cursor: pointer; }
   margin-left: 8px;
 }
 .vscode-link:hover { opacity: 1; text-decoration: none; }
+.memory-delete-btn {
+  font-size: 11px;
+  color: var(--danger, #e5534b);
+  opacity: 0.55;
+  transition: opacity 0.15s;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 10px;
+  cursor: pointer;
+}
+.memory-delete-btn:hover { opacity: 1; }
+.memory-delete-btn:disabled { opacity: 0.3; cursor: default; }
 
 .empty-state { text-align: center; padding: 40px; color: var(--text-dim); }
 
@@ -1951,6 +1964,7 @@ function renderMemoryFileCard(f) {
       <div class="memory-file-header">
         <span class="path">${healthHtml}${catLabels[f.category] || f.category}: ${fileName(f.path)}
           <a class="vscode-link" href="${vscodeUrl(f.path)}" title="Open in VS Code">edit</a>
+          ${f.category === 'memory-file' ? `<button class="memory-delete-btn" title="Delete this memory file" onclick="deleteMemory(this)">delete</button>` : ''}
         </span>
         <span class="meta">
           <span class="stale-indicator ${stale.cls}">${stale.text}</span>
@@ -1965,6 +1979,39 @@ function renderMemoryFileCard(f) {
 
 function fileName(path) {
   return path.replace(/\\/g, '/').split('/').pop();
+}
+
+function deleteMemory(btn) {
+  const card = btn.closest('.memory-file');
+  if (!card) return;
+  const path = card.getAttribute('data-path');
+  if (!confirm('Delete this memory file?\n\n' + path)) return;
+  btn.disabled = true;
+  btn.textContent = 'deleting...';
+  fetch('/api/memories/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        alert('Delete failed: ' + data.error);
+        btn.disabled = false;
+        btn.textContent = 'delete';
+        return;
+      }
+      // Refresh the list; the file watcher also fires memory_changed.
+      fetch('/api/memories').then(r => r.json()).then(d => {
+        memoriesData = d;
+        applyMemoriesView();
+      });
+    })
+    .catch(err => {
+      alert('Delete error: ' + err);
+      btn.disabled = false;
+      btn.textContent = 'delete';
+    });
 }
 
 // --- Memory Search ---

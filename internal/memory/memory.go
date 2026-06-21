@@ -2,6 +2,7 @@ package memory
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,6 +98,61 @@ func parseFrontmatter(content string) (name, description, fmType, body string) {
 		}
 	}
 	return
+}
+
+// DeleteFile removes the memory file at path. It refuses any path that is not
+// among the currently discoverable memory files under claudeDir, which guards
+// against path traversal and arbitrary deletes through the API.
+func DeleteFile(claudeDir, path string) error {
+	files, err := DiscoverAll(claudeDir)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if f.Path == path {
+			if f.Category != "memory-file" {
+				return fmt.Errorf("refusing to delete protected %s file: %s", f.Category, path)
+			}
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			// Prune the now-dangling pointer line from the sibling MEMORY.md
+			// index so the deletion doesn't trigger staleness alerts.
+			pruneFromIndex(filepath.Join(filepath.Dir(path), "MEMORY.md"), filepath.Base(path))
+			return nil
+		}
+	}
+	return fmt.Errorf("not a known memory file: %s", path)
+}
+
+// pruneFromIndex removes any line in the MEMORY.md at indexPath that contains a
+// markdown link to basename (e.g. "- [Title](basename) - hook"). It is a
+// best-effort cleanup: a missing index or unwritable file is silently ignored,
+// since the file deletion itself has already succeeded.
+func pruneFromIndex(indexPath, basename string) {
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return
+	}
+	linkRef := "](" + basename + ")"
+	lines := strings.Split(string(data), "\n")
+	kept := make([]string, 0, len(lines))
+	changed := false
+	for _, line := range lines {
+		if strings.Contains(line, linkRef) {
+			changed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if !changed {
+		return
+	}
+	info, err := os.Stat(indexPath)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(indexPath, []byte(strings.Join(kept, "\n")), info.Mode().Perm())
 }
 
 func DiscoverAll(claudeDir string) ([]*MemoryFile, error) {
