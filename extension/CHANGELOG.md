@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 - 2026-06-26
+
+### Added
+
+- **Active model in the status bar.** The badge now shows which model your current session is running, always visible without hovering: `42% session | opus-4-8`. When more than one session is live it prefers the one whose working directory is your open workspace folder, then the most recently active running session. The suffix drops off cleanly when no session is found.
+
 ## 0.2.0 - 2026-06-19
 
 ### Added

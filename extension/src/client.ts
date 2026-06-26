@@ -41,6 +41,19 @@ export interface UsagePayload {
   forecast?: { session?: ForecastPayload; weekly?: ForecastPayload };
 }
 
+/**
+ * Subset of a parser.SessionSummary the extension renders. The server sends
+ * many more fields; only those needed to pick and label the active session are
+ * typed here. Times are RFC3339.
+ */
+export interface SessionSummary {
+  id: string;
+  model?: string;
+  cwd?: string;
+  last_activity?: string;
+  is_running?: boolean;
+}
+
 /** Subset of GET /api/info the extension cares about. */
 export interface InfoPayload {
   version?: string;
@@ -95,9 +108,15 @@ export function getInfo(): Promise<InfoPayload> {
   return getJSON<InfoPayload>("/api/info");
 }
 
+/** Today's sessions (the default range). Used for the initial model paint. */
+export function getSessions(): Promise<SessionSummary[]> {
+  return getJSON<SessionSummary[]>("/api/sessions");
+}
+
 export type SseHandlers = {
   onUsage?: (u: UsagePayload) => void;
   onAuthStatus?: (a: AuthStatusPayload) => void;
+  onSessions?: (s: SessionSummary[]) => void;
   /** Called when the connection opens or drops, so the UI can reflect state. */
   onConnectionChange?: (connected: boolean) => void;
 };
@@ -230,7 +249,10 @@ export class SseClient {
       case "auth_status":
         this.handlers.onAuthStatus?.(payload as AuthStatusPayload);
         break;
-      // `sessions`, `update_available`, `ping` are ignored in v1.
+      case "sessions":
+        this.handlers.onSessions?.(payload as SessionSummary[]);
+        break;
+      // `update_available`, `ping` are ignored in v1.
     }
   }
 }

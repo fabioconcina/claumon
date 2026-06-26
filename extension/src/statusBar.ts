@@ -1,5 +1,11 @@
 import * as vscode from "vscode";
-import { UsagePayload, AuthStatusPayload, ForecastPayload, getConfig } from "./client";
+import {
+  UsagePayload,
+  AuthStatusPayload,
+  ForecastPayload,
+  SessionSummary,
+  getConfig,
+} from "./client";
 
 /** Local time-of-day for an RFC3339 timestamp, e.g. "14:05" (""  if invalid). */
 function fmtClock(iso?: string): string {
@@ -13,6 +19,52 @@ function fmtClock(iso?: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Friendly model name, mirroring the dashboard's shortModel. */
+function shortModel(m?: string): string {
+  if (!m) {
+    return "";
+  }
+  return m.replace("claude-", "").replace(/-\d{8}$/, "");
+}
+
+/** Epoch ms for an RFC3339 timestamp, or 0 if absent/invalid. */
+function ts(iso?: string): number {
+  if (!iso) {
+    return 0;
+  }
+  const t = new Date(iso).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+/**
+ * The model of the session the user is most plausibly driving: prefer a running
+ * session whose cwd is an open workspace folder, then any running session, then
+ * the most recently active session overall. Ties broken by last activity.
+ * Returns "" when no session (or no model) is known.
+ */
+function activeModel(sessions: SessionSummary[]): string {
+  if (sessions.length === 0) {
+    return "";
+  }
+  const roots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+  const inWorkspace = (s: SessionSummary): boolean =>
+    !!s.cwd && roots.some((r) => s.cwd === r || s.cwd!.startsWith(r + "/"));
+  const score = (s: SessionSummary): number =>
+    (s.is_running && inWorkspace(s) ? 2 : s.is_running ? 1 : 0);
+
+  let best: SessionSummary | undefined;
+  for (const s of sessions) {
+    if (
+      !best ||
+      score(s) > score(best) ||
+      (score(s) === score(best) && ts(s.last_activity) > ts(best.last_activity))
+    ) {
+      best = s;
+    }
+  }
+  return shortModel(best?.model);
+}
+
 /**
  * Owns the status bar item and renders the latest known state into it.
  * States, in priority order: offline (no connection) > pending (connected but
@@ -23,6 +75,7 @@ export class StatusBar {
   private connected = false;
   private usage?: UsagePayload;
   private auth?: AuthStatusPayload;
+  private sessions: SessionSummary[] = [];
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -46,6 +99,11 @@ export class StatusBar {
 
   setAuth(auth: AuthStatusPayload): void {
     this.auth = auth;
+    this.render();
+  }
+
+  setSessions(sessions: SessionSummary[]): void {
+    this.sessions = sessions ?? [];
     this.render();
   }
 
@@ -88,7 +146,9 @@ export class StatusBar {
     const forecastBad = typeof fc?.projected_pct === "number" && fc.projected_pct >= 100;
 
     const icon = forecastBad ? "$(flame)" : "$(pulse)";
-    this.item.text = `${icon} ${pctText}${projText} ${label}`;
+    const model = activeModel(this.sessions);
+    const modelText = model ? ` | ${model}` : "";
+    this.item.text = `${icon} ${pctText}${projText} ${label}${modelText}`;
     this.item.backgroundColor = high
       ? new vscode.ThemeColor("statusBarItem.errorBackground")
       : warn || forecastBad

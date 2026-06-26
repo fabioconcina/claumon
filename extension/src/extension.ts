@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { SseClient, getUsage } from "./client";
+import { SseClient, getUsage, getSessions } from "./client";
 import { StatusBar } from "./statusBar";
 import { Dashboard } from "./dashboard";
 
@@ -13,15 +13,22 @@ export function activate(context: vscode.ExtensionContext): void {
   sse = new SseClient({
     onUsage: (u) => bar.setUsage(u),
     onAuthStatus: (a) => bar.setAuth(a),
+    onSessions: (s) => bar.setSessions(s),
     onConnectionChange: (connected) => bar.setConnected(connected),
   });
   sse.start();
 
-  // Initial paint before the first SSE tick arrives.
+  // Initial paint before the first SSE tick arrives. Sessions only stream on a
+  // file change, so seed the model from a one-shot fetch too.
   void getUsage()
     .then((u) => bar.setUsage(u))
     .catch(() => {
       /* offline; SSE client will report state */
+    });
+  void getSessions()
+    .then((s) => bar.setSessions(s))
+    .catch(() => {
+      /* offline; sessions will arrive over SSE once connected */
     });
 
   context.subscriptions.push(
@@ -30,6 +37,11 @@ export function activate(context: vscode.ExtensionContext): void {
       sse?.restart();
       void getUsage()
         .then((u) => bar.setUsage(u))
+        .catch(() => {
+          /* still offline */
+        });
+      void getSessions()
+        .then((s) => bar.setSessions(s))
         .catch(() => {
           /* still offline */
         });
