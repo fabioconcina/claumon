@@ -1132,6 +1132,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // --- Formatting ---
 function fmtNum(n) {
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
   if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
   return n.toString();
@@ -1304,6 +1305,9 @@ function updateUsageGauges(data) {
   const fc = data.forecast || {};
   updateForecast('session', fc.session);
   updateForecast('weekly', fc.weekly);
+
+  // If the forecast modal is open, refresh its chart in place with the new data.
+  if (fcOpenGauge) loadForecastSample(fcOpenGauge, true);
 
   // Opus gauge
   const opusCard = document.getElementById('gauge-opus-card');
@@ -2814,6 +2818,8 @@ setInterval(() => {
   });
 })();
 
+let fcOpenGauge = null;
+
 function openForecastModal(gauge) {
   const modal = document.getElementById('fc-modal');
   const title = document.getElementById('fc-modal-title');
@@ -2823,6 +2829,17 @@ function openForecastModal(gauge) {
   sub.textContent = '';
   body.innerHTML = '<div class="fc-empty">Sampling trajectories…</div>';
   modal.classList.add('open');
+  fcOpenGauge = gauge;
+  loadForecastSample(gauge, false);
+}
+
+// Fetch and render the trajectory chart for the given gauge.
+// silent=false (initial open) shows the placeholder and rebuilds the body;
+// silent=true (live refresh) re-renders in place without a "sampling" flash and
+// keeps the last good chart on transient fetch errors.
+function loadForecastSample(gauge, silent) {
+  const sub = document.getElementById('fc-modal-sub');
+  const body = document.getElementById('fc-modal-body');
   fetch('/api/forecast/sample?gauge=' + encodeURIComponent(gauge))
     .then(r => r.json())
     .then(resp => {
@@ -2830,22 +2847,31 @@ function openForecastModal(gauge) {
         const msg = resp.reason === 'at_limit'
           ? 'Limit reached — already at 100%. Nothing left to forecast until reset.'
           : 'No forecast available yet.';
+        sub.textContent = '';
         body.innerHTML = '<div class="fc-empty">' + msg + '</div>';
         return;
       }
       sub.textContent = 'model ' + (resp.data.model_version || '?');
-      body.innerHTML = '<svg class="fc-chart" id="fc-chart" viewBox="0 0 600 280" preserveAspectRatio="xMidYMid meet"></svg><div class="fc-foot" id="fc-foot"></div>';
+      // Rebuild the chart scaffold on initial open, or when a live refresh finds
+      // the body currently showing an empty/at-limit message (no #fc-chart).
+      if (!silent || !document.getElementById('fc-chart')) {
+        body.innerHTML = '<svg class="fc-chart" id="fc-chart" viewBox="0 0 600 280" preserveAspectRatio="xMidYMid meet"></svg><div class="fc-foot" id="fc-foot"></div>';
+      }
       renderForecastSample(resp.data);
     })
     .catch(err => {
-      body.innerHTML = '<div class="fc-empty">Failed to load forecast samples.</div>';
       console.error('forecast sample fetch failed', err);
+      // On initial open, surface the error; on live refresh, keep the last good chart.
+      if (!silent) {
+        body.innerHTML = '<div class="fc-empty">Failed to load forecast samples.</div>';
+      }
     });
 }
 
 function closeForecastModal() {
   const modal = document.getElementById('fc-modal');
   if (modal) modal.classList.remove('open');
+  fcOpenGauge = null;
 }
 
 function renderForecastSample(d) {
@@ -2925,6 +2951,10 @@ function renderForecastSample(d) {
     d.observed.forEach((pt, i) => {
       obsD += (i === 0 ? 'M ' : ' L ') + x(new Date(pt.t).getTime()) + ' ' + y(pt.u);
     });
+    // Bridge the gap between the last stored observation and the current "now"
+    // point: snapshots can lag a few minutes behind t_now, which would otherwise
+    // leave the observed line ending short of the now dot / trajectory origin.
+    obsD += ' L ' + x(tNow) + ' ' + y(d.u_now);
     svg += `<path d="${obsD}" fill="none" stroke="#7dbfb8" stroke-width="1.8"/>`;
   }
 

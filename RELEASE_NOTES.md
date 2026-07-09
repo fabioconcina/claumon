@@ -1,17 +1,17 @@
-## Memory
-
-- **Delete individual memory files from the dashboard.** Each memory note now
-  has a `delete` button next to `edit`, with a confirmation prompt. Deletion is
-  restricted to individual memory files: `CLAUDE.md`, rule files, and the
-  `MEMORY.md` index are protected, both in the UI and in the API
-  (`POST /api/memories/delete`), which only removes a path that resolves to a
-  known `memory-file`. The matching pointer line is also pruned from the
-  sibling `MEMORY.md` index, so a delete no longer leaves a dangling link or
-  triggers staleness alerts.
-
 ## Dashboard
 
-- **14-day totals on the history charts.** The "Daily Tokens" and "Equiv. API
-  Cost" charts now show a running total for the whole 14-day window in their
-  header (e.g. `Total 44.3M`, `Total $452.18`). The tokens total tracks the
-  "Billable only" toggle, so it reflects exactly what the bars represent.
+- **Live-updating forecast chart.** The forecast (trajectory) popup now
+  refreshes in place while it stays open: each new usage snapshot re-samples and
+  re-draws the chart, so the projected trajectories, confidence band, and ETA
+  keep moving instead of freezing on the values captured when you opened it. No
+  more closing and reopening to see the latest projection.
+
+- **Observed line connects to "now".** Stored usage snapshots can lag the current
+  time by a few minutes, which used to leave a gap between the end of the
+  observed (teal) line and the "now" marker where the trajectories originate. The
+  observed line now extends to the current point, so it joins the trajectory fan
+  cleanly.
+
+- **Billions formatting.** Large token totals now switch to a `B` suffix once
+  they reach a billion (e.g. `1.5B`) instead of continuing to report thousands of
+  millions (`1500.0M`).
