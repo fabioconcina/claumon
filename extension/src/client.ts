@@ -72,7 +72,7 @@ export interface AuthStatusPayload {
 export function getConfig(): { host: string; port: number; metric: "session" | "weekly" } {
   const cfg = vscode.workspace.getConfiguration("claumon");
   return {
-    host: cfg.get<string>("host", "localhost"),
+    host: cfg.get<string>("host", "127.0.0.1"),
     port: cfg.get<number>("port", 3131),
     metric: cfg.get<"session" | "weekly">("statusBar.metric", "session"),
   };

@@ -6,7 +6,7 @@ claumon dashboard in an editor panel, so you do not have to keep a browser tab
 open.
 
 This extension is a **client only**: it connects to a claumon server you are
-already running (default `localhost:3131`). It does not start or bundle claumon.
+already running (default `127.0.0.1:3131`). It does not start or bundle claumon.
 
 ## Install
 
@@ -52,14 +52,14 @@ Install from VSIX...** from the Command Palette.
 ## Requirements
 
 - A running claumon server (see the parent project). By default the extension
-  looks for it at `http://localhost:3131`.
+  looks for it at `http://127.0.0.1:3131`.
 - VS Code 1.85 or newer.
 
 ## Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `claumon.host` | `localhost` | Hostname of the claumon server. |
+| `claumon.host` | `127.0.0.1` | Hostname of the claumon server. |
 | `claumon.port` | `3131` | Port of the claumon server. |
 | `claumon.statusBar.metric` | `session` | Which metric to show in the status bar (`session` or `weekly`). |
 

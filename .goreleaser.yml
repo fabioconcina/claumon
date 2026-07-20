@@ -24,6 +24,10 @@ archives:
       - tar.gz
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
 
+sboms:
+  - artifacts: binary
+    disable: false
+
 brews:
   - ids:
       - homebrew

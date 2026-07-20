@@ -259,13 +259,37 @@ func (h *Handlers) HandleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := memory.DeleteFile(h.claudeDir, req.Path); err != nil {
+	trashID, err := memory.TrashFile(h.claudeDir, req.Path)
+	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	h.RefreshMemories()
-	log.Printf("[memory] Deleted %s", req.Path)
-	writeJSON(w, map[string]string{"status": "ok"})
+	log.Printf("[memory] Moved to trash: %s", req.Path)
+	writeJSON(w, map[string]string{"status": "ok", "trash_id": trashID})
+}
+
+func (h *Handlers) HandleRestoreMemory(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TrashID string `json:"trash_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.TrashID == "" {
+		writeJSONError(w, "missing trash id", http.StatusBadRequest)
+		return
+	}
+
+	restoredPath, err := memory.RestoreFile(h.claudeDir, req.TrashID)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	h.RefreshMemories()
+	log.Printf("[memory] Restored from trash: %s", restoredPath)
+	writeJSON(w, map[string]string{"status": "ok", "path": restoredPath})
 }
 
 func (h *Handlers) HandleMemoriesStaleness(w http.ResponseWriter, r *http.Request) {
@@ -473,7 +497,6 @@ func (h *Handlers) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 func setJSONHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 }
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

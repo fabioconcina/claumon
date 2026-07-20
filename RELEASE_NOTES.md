@@ -1,17 +1,15 @@
-## Dashboard
+## Security & safety
 
-- **Live-updating forecast chart.** The forecast (trajectory) popup now
-  refreshes in place while it stays open: each new usage snapshot re-samples and
-  re-draws the chart, so the projected trajectories, confidence band, and ETA
-  keep moving instead of freezing on the values captured when you opened it. No
-  more closing and reopening to see the latest projection.
+- **Local-only by default.** The dashboard now binds explicitly to
+  `127.0.0.1`, so session details, memory files, and process controls are not
+  exposed to the local network. Cross-origin browser mutations are rejected,
+  and API responses no longer opt into permissive CORS.
 
-- **Observed line connects to "now".** Stored usage snapshots can lag the current
-  time by a few minutes, which used to leave a gap between the end of the
-  observed (teal) line and the "now" marker where the trajectories originate. The
-  observed line now extends to the current point, so it joins the trajectory fan
-  cleanly.
+- **Recoverable memory deletion.** Deleting a memory file now moves it into
+  claumon's local trash instead of removing it permanently. An **Undo** action
+  restores both the file and its `MEMORY.md` index entry. Trash is cleaned up
+  automatically after 30 days.
 
-- **Billions formatting.** Large token totals now switch to a `B` suffix once
-  they reach a billion (e.g. `1.5B`) instead of continuing to report thousands of
-  millions (`1500.0M`).
+- **Verifiable releases.** Release builds now include per-binary software bills
+  of materials and GitHub build-provenance attestations alongside the existing
+  SHA-256 checksums.

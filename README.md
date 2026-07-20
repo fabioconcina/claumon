@@ -89,7 +89,12 @@ go install github.com/fabioconcina/claumon@latest
 claumon
 ```
 
-Open [http://localhost:3131](http://localhost:3131) in your browser.
+Open [http://127.0.0.1:3131](http://127.0.0.1:3131) in your browser.
+
+claumon listens on the IPv4 loopback interface only. Session contents, memory
+files, and process controls are never exposed to the local network. For access
+from another machine, keep claumon on loopback and use an authenticated SSH
+tunnel or reverse proxy rather than publishing port 3131 directly.
 
 claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works. Only the API usage gauges are unavailable.
 
@@ -161,7 +166,7 @@ projected percentage at reset (e.g. `45%->72% session`); the hover tooltip adds
 the session/weekly breakdown, reset times, and the forecast detail.
 
 It is a **client only** and connects to a claumon server you are already running
-(default `localhost:3131`); it does not start or bundle claumon.
+(default `127.0.0.1:3131`); it does not start or bundle claumon.
 
 Install it with one command (grabs the latest `.vsix` from GitHub and installs
 it via the `code` CLI):
@@ -180,6 +185,19 @@ claumon update
 ```
 
 Checks GitHub releases for a newer version, downloads the right binary for your platform, and replaces the current one. If a background service is installed, it restarts automatically after the update.
+
+### Verify a release
+
+Every release includes SHA-256 checksums, per-binary SPDX software bills of
+materials, and GitHub build-provenance attestations. After downloading a binary,
+verify its provenance with the GitHub CLI:
+
+```bash
+gh attestation verify ./claumon-darwin-arm64 --repo fabioconcina/claumon
+```
+
+The built-in `claumon update` command verifies the downloaded binary against the
+release checksum before replacing the current executable.
 
 ## Uninstall
 
@@ -228,6 +246,7 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 
 - Browser for all memory files (CLAUDE.md, rules, per-project memories) with search, category filters, and staleness indicators
 - **Health scores** (A–F per file with improvement tips) and **staleness alerts** (broken MEMORY.md links, orphans, index mismatches)
+- Recoverable memory deletion: files move into `~/.claude/.claumon-trash`, can be restored immediately with **Undo**, and are removed permanently after 30 days
 - An **interactive relationship graph** with project filters and click-to-navigate; click any file to open it in your editor via `vscode://`
 
 ## Keyboard shortcuts

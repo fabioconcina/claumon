@@ -2,11 +2,16 @@ package memory
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -100,59 +105,274 @@ func parseFrontmatter(content string) (name, description, fmType, body string) {
 	return
 }
 
-// DeleteFile removes the memory file at path. It refuses any path that is not
-// among the currently discoverable memory files under claudeDir, which guards
-// against path traversal and arbitrary deletes through the API.
-func DeleteFile(claudeDir, path string) error {
+type trashRecord struct {
+	ID                string           `json:"id"`
+	OriginalPath      string           `json:"original_path"`
+	DeletedAt         string           `json:"deleted_at"`
+	IndexPath         string           `json:"index_path,omitempty"`
+	RemovedIndexLines []trashIndexLine `json:"removed_index_lines,omitempty"`
+}
+
+// trashIndexLine is a MEMORY.md pointer line pruned during a trash operation,
+// with its original 0-based line number so a restore can put it back in place.
+type trashIndexLine struct {
+	Text string `json:"text"`
+	Line int    `json:"line"`
+}
+
+// trashMu serializes trash operations: the HTTP delete/restore handlers and
+// the daily prune goroutine all mutate the same .claumon-trash tree.
+var trashMu sync.Mutex
+
+// TrashRetention is how long recoverable memory deletions are kept before the
+// daily maintenance pass removes them permanently.
+const TrashRetention = 30 * 24 * time.Hour
+
+// TrashFile moves a memory file into claudeDir/.claumon-trash and returns an
+// opaque restore ID. It refuses any path that is not among the currently
+// discoverable memory files under claudeDir, guarding against path traversal
+// and arbitrary file operations through the API.
+func TrashFile(claudeDir, path string) (string, error) {
+	trashMu.Lock()
+	defer trashMu.Unlock()
+
 	files, err := DiscoverAll(claudeDir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	for _, f := range files {
 		if f.Path == path {
 			if f.Category != "memory-file" {
-				return fmt.Errorf("refusing to delete protected %s file: %s", f.Category, path)
+				return "", fmt.Errorf("refusing to delete protected %s file: %s", f.Category, path)
 			}
-			if err := os.Remove(path); err != nil {
-				return err
+
+			id := newTrashID()
+			recordDir := filepath.Join(trashRoot(claudeDir), id)
+			if err := os.MkdirAll(recordDir, 0700); err != nil {
+				return "", err
 			}
-			// Prune the now-dangling pointer line from the sibling MEMORY.md
-			// index so the deletion doesn't trigger staleness alerts.
-			pruneFromIndex(filepath.Join(filepath.Dir(path), "MEMORY.md"), filepath.Base(path))
-			return nil
+
+			indexPath := filepath.Join(filepath.Dir(path), "MEMORY.md")
+			removedLines, prunedIndex, indexMode := planIndexPrune(indexPath, filepath.Base(path))
+			record := trashRecord{
+				ID:                id,
+				OriginalPath:      path,
+				DeletedAt:         time.Now().UTC().Format(time.RFC3339Nano),
+				IndexPath:         indexPath,
+				RemovedIndexLines: removedLines,
+			}
+			metadata, err := json.MarshalIndent(record, "", "  ")
+			if err != nil {
+				_ = os.RemoveAll(recordDir)
+				return "", err
+			}
+			if err := os.WriteFile(filepath.Join(recordDir, "record.json"), metadata, 0600); err != nil {
+				_ = os.RemoveAll(recordDir)
+				return "", err
+			}
+
+			trashedPath := filepath.Join(recordDir, "memory.md")
+			if err := os.Rename(path, trashedPath); err != nil {
+				_ = os.RemoveAll(recordDir)
+				return "", err
+			}
+			// Best effort: if the index cannot be rewritten, the memory itself is
+			// still safely recoverable from trash.
+			if prunedIndex != nil {
+				_ = os.WriteFile(indexPath, prunedIndex, indexMode)
+			}
+			return id, nil
 		}
 	}
-	return fmt.Errorf("not a known memory file: %s", path)
+	return "", fmt.Errorf("not a known memory file: %s", path)
 }
 
-// pruneFromIndex removes any line in the MEMORY.md at indexPath that contains a
-// markdown link to basename (e.g. "- [Title](basename) - hook"). It is a
-// best-effort cleanup: a missing index or unwritable file is silently ignored,
-// since the file deletion itself has already succeeded.
-func pruneFromIndex(indexPath, basename string) {
+// RestoreFile restores a file previously moved by TrashFile. Trash IDs are
+// intentionally opaque and path separators are rejected before touching disk.
+func RestoreFile(claudeDir, id string) (string, error) {
+	if id == "" || filepath.Base(id) != id || id == "." || id == ".." {
+		return "", fmt.Errorf("invalid trash id")
+	}
+	trashMu.Lock()
+	defer trashMu.Unlock()
+	recordDir := filepath.Join(trashRoot(claudeDir), id)
+	data, err := os.ReadFile(filepath.Join(recordDir, "record.json"))
+	if err != nil {
+		return "", fmt.Errorf("trash entry not found: %w", err)
+	}
+	var record trashRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return "", fmt.Errorf("invalid trash entry: %w", err)
+	}
+	if record.ID != id || !isRestorableMemoryPath(claudeDir, record.OriginalPath) {
+		return "", fmt.Errorf("invalid trash entry")
+	}
+	if _, err := os.Stat(record.OriginalPath); err == nil {
+		return "", fmt.Errorf("cannot restore: destination already exists")
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(record.OriginalPath), 0755); err != nil {
+		return "", err
+	}
+	if err := os.Rename(filepath.Join(recordDir, "memory.md"), record.OriginalPath); err != nil {
+		return "", err
+	}
+	restoreIndexLines(record.IndexPath, record.RemovedIndexLines)
+	_ = os.RemoveAll(recordDir)
+	return record.OriginalPath, nil
+}
+
+func trashRoot(claudeDir string) string {
+	return filepath.Join(claudeDir, ".claumon-trash")
+}
+
+// PruneTrash permanently removes recoverable deletions that are at least 30
+// days old. Malformed entries are preserved so a cleanup bug cannot destroy
+// files whose retention age cannot be established safely.
+func PruneTrash(claudeDir string, now time.Time) (int, error) {
+	trashMu.Lock()
+	defer trashMu.Unlock()
+
+	root := trashRoot(claudeDir)
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	cutoff := now.Add(-TrashRetention)
+	removed := 0
+	var pruneErr error
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		recordDir := filepath.Join(root, entry.Name())
+		data, err := os.ReadFile(filepath.Join(recordDir, "record.json"))
+		if err != nil {
+			continue
+		}
+		var record trashRecord
+		if err := json.Unmarshal(data, &record); err != nil || record.ID != entry.Name() {
+			continue
+		}
+		deletedAt, err := time.Parse(time.RFC3339Nano, record.DeletedAt)
+		if err != nil || deletedAt.After(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(recordDir); err != nil {
+			if pruneErr == nil {
+				pruneErr = fmt.Errorf("removing trash entry %s: %w", entry.Name(), err)
+			}
+			continue
+		}
+		removed++
+	}
+	return removed, pruneErr
+}
+
+func newTrashID() string {
+	random := make([]byte, 6)
+	if _, err := rand.Read(random); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return time.Now().UTC().Format("20060102T150405.000000000Z") + "-" + hex.EncodeToString(random)
+}
+
+func isRestorableMemoryPath(claudeDir, path string) bool {
+	rel, err := filepath.Rel(claudeDir, path)
+	if err != nil || rel == "." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	parts := strings.Split(filepath.Clean(rel), string(filepath.Separator))
+	return len(parts) == 4 &&
+		strings.EqualFold(parts[0], "projects") &&
+		strings.EqualFold(parts[2], "memory") &&
+		isMemoryFileName(parts[3])
+}
+
+// isMemoryFileName reports whether a bare filename counts as an individual
+// project memory file: any .md except the protected MEMORY.md index. This is
+// the single definition shared by discovery and restore validation.
+func isMemoryFileName(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".md") && !strings.EqualFold(name, "MEMORY.md")
+}
+
+// planIndexPrune returns a rewritten MEMORY.md and the lines removed from it,
+// each tagged with its original position so a restore can reinsert in place.
+// A missing or unreadable index produces nil output and does not block trashing.
+func planIndexPrune(indexPath, basename string) ([]trashIndexLine, []byte, os.FileMode) {
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		return
+		return nil, nil, 0
 	}
 	linkRef := "](" + basename + ")"
 	lines := strings.Split(string(data), "\n")
 	kept := make([]string, 0, len(lines))
-	changed := false
-	for _, line := range lines {
+	var removed []trashIndexLine
+	for i, line := range lines {
 		if strings.Contains(line, linkRef) {
-			changed = true
+			removed = append(removed, trashIndexLine{Text: line, Line: i})
 			continue
 		}
 		kept = append(kept, line)
 	}
-	if !changed {
+	if len(removed) == 0 {
+		return nil, nil, 0
+	}
+	info, err := os.Stat(indexPath)
+	if err != nil {
+		return nil, nil, 0
+	}
+	return removed, []byte(strings.Join(kept, "\n")), info.Mode().Perm()
+}
+
+func restoreIndexLines(indexPath string, removed []trashIndexLine) {
+	if indexPath == "" || len(removed) == 0 {
 		return
+	}
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, rem := range removed {
+		if containsLine(lines, rem.Text) {
+			continue
+		}
+		// Clamp to the end of the file, but keep a trailing newline (an empty
+		// final element) last. Removed lines arrive in ascending original
+		// order, so reinserting at their recorded positions reconstructs the
+		// pre-deletion layout when the index was not edited in between.
+		end := len(lines)
+		if end > 0 && lines[end-1] == "" {
+			end--
+		}
+		pos := rem.Line
+		if pos > end {
+			pos = end
+		}
+		lines = append(lines, "")
+		copy(lines[pos+1:], lines[pos:])
+		lines[pos] = rem.Text
 	}
 	info, err := os.Stat(indexPath)
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(indexPath, []byte(strings.Join(kept, "\n")), info.Mode().Perm())
+	_ = os.WriteFile(indexPath, []byte(strings.Join(lines, "\n")), info.Mode().Perm())
+}
+
+func containsLine(lines []string, target string) bool {
+	for _, l := range lines {
+		if l == target {
+			return true
+		}
+	}
+	return false
 }
 
 func DiscoverAll(claudeDir string) ([]*MemoryFile, error) {
@@ -213,7 +433,7 @@ func discoverProjectMemories(projDir, projName string) []*MemoryFile {
 
 	if entries, err := os.ReadDir(memoryDir); err == nil {
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || e.Name() == "MEMORY.md" {
+			if e.IsDir() || !isMemoryFileName(e.Name()) {
 				continue
 			}
 			if mf := readMemoryFile(filepath.Join(memoryDir, e.Name()), projName, "memory-file"); mf != nil {
@@ -301,4 +521,3 @@ func SearchMemories(memories []*MemoryFile, query string) []*MemoryFile {
 	}
 	return results
 }
-

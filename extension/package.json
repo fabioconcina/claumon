@@ -49,7 +49,7 @@
       "properties": {
         "claumon.host": {
           "type": "string",
-          "default": "localhost",
+          "default": "127.0.0.1",
           "scope": "machine",
           "description": "Hostname where the claumon server is running. Machine-scoped: cannot be set per-workspace, so an untrusted repo cannot redirect the extension to another host."
         },

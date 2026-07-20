@@ -1,10 +1,12 @@
 package memory
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderMarkdown(t *testing.T) {
@@ -29,13 +31,13 @@ func TestRenderMarkdown(t *testing.T) {
 
 func TestParseFrontmatter(t *testing.T) {
 	tests := []struct {
-		name              string
-		content           string
+		name                                   string
+		content                                string
 		wantName, wantDesc, wantType, wantBody string
 	}{
 		{
-			name: "full frontmatter",
-			content: "---\nname: my-memory\ndescription: a test memory\ntype: feedback\n---\nBody content here.",
+			name:     "full frontmatter",
+			content:  "---\nname: my-memory\ndescription: a test memory\ntype: feedback\n---\nBody content here.",
 			wantName: "my-memory",
 			wantDesc: "a test memory",
 			wantType: "feedback",
@@ -47,8 +49,8 @@ func TestParseFrontmatter(t *testing.T) {
 			wantBody: "Just a body.",
 		},
 		{
-			name: "quoted values",
-			content: "---\nname: \"quoted name\"\ndescription: 'single quoted'\ntype: user\n---\nBody.",
+			name:     "quoted values",
+			content:  "---\nname: \"quoted name\"\ndescription: 'single quoted'\ntype: user\n---\nBody.",
 			wantName: "quoted name",
 			wantDesc: "single quoted",
 			wantType: "user",
@@ -174,7 +176,7 @@ func TestDiscoverAll(t *testing.T) {
 	}
 }
 
-func TestDeleteFile(t *testing.T) {
+func TestTrashAndRestoreFile(t *testing.T) {
 	dir := t.TempDir()
 	projDir := filepath.Join(dir, "projects", "Users-fabio-Projects-test")
 	memDir := filepath.Join(projDir, "memory")
@@ -185,16 +187,20 @@ func TestDeleteFile(t *testing.T) {
 	os.WriteFile(indexPath, []byte("# Index\n- [A note](note.md) - hook\n- [Keep me](other.md) - hook\n"), 0644)
 
 	// The auto-memory index is protected: deletion is refused and it stays put.
-	if err := DeleteFile(dir, indexPath); err == nil {
-		t.Error("DeleteFile() deleted the protected MEMORY.md index, want error")
+	if _, err := TrashFile(dir, indexPath); err == nil {
+		t.Error("TrashFile() moved the protected MEMORY.md index, want error")
 	}
 	if _, err := os.Stat(indexPath); err != nil {
 		t.Errorf("MEMORY.md was removed despite being protected: %v", err)
 	}
 
-	// Deleting a known memory file succeeds and removes it from disk.
-	if err := DeleteFile(dir, notePath); err != nil {
-		t.Fatalf("DeleteFile() error: %v", err)
+	// Trashing a known memory file succeeds and removes it from its original path.
+	trashID, err := TrashFile(dir, notePath)
+	if err != nil {
+		t.Fatalf("TrashFile() error: %v", err)
+	}
+	if trashID == "" {
+		t.Fatal("TrashFile() returned an empty restore ID")
 	}
 	if _, err := os.Stat(notePath); !os.IsNotExist(err) {
 		t.Errorf("note.md still exists after delete (stat err = %v)", err)
@@ -208,13 +214,88 @@ func TestDeleteFile(t *testing.T) {
 		t.Errorf("MEMORY.md lost an unrelated pointer line:\n%s", idx)
 	}
 
+	// Restoring puts both the file and its MEMORY.md pointer back.
+	restoredPath, err := RestoreFile(dir, trashID)
+	if err != nil {
+		t.Fatalf("RestoreFile() error: %v", err)
+	}
+	if restoredPath != notePath {
+		t.Errorf("RestoreFile() path = %q, want %q", restoredPath, notePath)
+	}
+	if _, err := os.Stat(notePath); err != nil {
+		t.Errorf("note.md was not restored: %v", err)
+	}
+	// The pointer must come back at its original position, not appended at EOF.
+	idx, _ = os.ReadFile(indexPath)
+	want := "# Index\n- [A note](note.md) - hook\n- [Keep me](other.md) - hook\n"
+	if string(idx) != want {
+		t.Errorf("MEMORY.md after restore = %q, want %q", idx, want)
+	}
+
 	// An unknown / out-of-scope path is refused, and the file is left untouched.
 	outside := filepath.Join(dir, "outside.md")
 	os.WriteFile(outside, []byte("not a memory"), 0644)
-	if err := DeleteFile(dir, outside); err == nil {
-		t.Error("DeleteFile() accepted an unknown path, want error")
+	if _, err := TrashFile(dir, outside); err == nil {
+		t.Error("TrashFile() accepted an unknown path, want error")
 	}
 	if _, err := os.Stat(outside); err != nil {
 		t.Errorf("outside.md was removed despite being out of scope: %v", err)
+	}
+}
+
+func TestRestoreFileRejectsInvalidID(t *testing.T) {
+	dir := t.TempDir()
+	for _, id := range []string{"", "..", "../outside", `..\\outside`} {
+		if _, err := RestoreFile(dir, id); err == nil {
+			t.Errorf("RestoreFile(%q) succeeded, want error", id)
+		}
+	}
+}
+
+func TestPruneTrashRemovesEntriesAfterThirtyDays(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+
+	writeEntry := func(id string, deletedAt time.Time) string {
+		t.Helper()
+		recordDir := filepath.Join(trashRoot(dir), id)
+		if err := os.MkdirAll(recordDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		record := trashRecord{ID: id, DeletedAt: deletedAt.Format(time.RFC3339Nano)}
+		data, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(recordDir, "record.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(recordDir, "memory.md"), []byte("memory"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return recordDir
+	}
+
+	oldEntry := writeEntry("old", now.Add(-31*24*time.Hour))
+	freshEntry := writeEntry("fresh", now.Add(-29*24*time.Hour))
+	invalidEntry := filepath.Join(trashRoot(dir), "invalid")
+	if err := os.MkdirAll(invalidEntry, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := PruneTrash(dir, now)
+	if err != nil {
+		t.Fatalf("PruneTrash() error: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("PruneTrash() removed %d entries, want 1", removed)
+	}
+	if _, err := os.Stat(oldEntry); !os.IsNotExist(err) {
+		t.Errorf("old trash entry still exists: %v", err)
+	}
+	for _, path := range []string{freshEntry, invalidEntry} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("trash entry %s should have been preserved: %v", path, err)
+		}
 	}
 }

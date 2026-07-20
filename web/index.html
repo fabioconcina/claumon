@@ -600,6 +600,40 @@ tr.clickable { cursor: pointer; }
 
 .empty-state { text-align: center; padding: 40px; color: var(--text-dim); }
 
+.toast-region {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 40px));
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--text-bright);
+  color: var(--bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  font-size: 12px;
+}
+.toast span { flex: 1; }
+.toast button {
+  background: none;
+  border: none;
+  color: #9c472f;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 3px 5px;
+}
+.toast button:hover { text-decoration: underline; }
+.toast button:disabled { color: var(--text-dim); cursor: default; text-decoration: none; }
+
 /* Staleness alerts */
 .staleness-banner {
   background: var(--bg-surface);
@@ -1095,6 +1129,8 @@ tr.clickable { cursor: pointer; }
     <div id="graph-legend" class="graph-legend"></div>
   </div>
 </div>
+
+<div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Session Detail Panel -->
 <div class="backdrop" id="detail-backdrop"></div>
@@ -1989,9 +2025,9 @@ function deleteMemory(btn) {
   const card = btn.closest('.memory-file');
   if (!card) return;
   const path = card.getAttribute('data-path');
-  if (!confirm('Delete this memory file?\n\n' + path)) return;
+  if (!confirm('Move this memory file to trash?\n\n' + path)) return;
   btn.disabled = true;
-  btn.textContent = 'deleting...';
+  btn.textContent = 'moving...';
   fetch('/api/memories/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2000,21 +2036,76 @@ function deleteMemory(btn) {
     .then(r => r.json())
     .then(data => {
       if (data.error) {
-        alert('Delete failed: ' + data.error);
+        alert('Move failed: ' + data.error);
         btn.disabled = false;
         btn.textContent = 'delete';
         return;
       }
-      // Refresh the list; the file watcher also fires memory_changed.
-      fetch('/api/memories').then(r => r.json()).then(d => {
-        memoriesData = d;
-        applyMemoriesView();
-      });
+      refreshMemoriesAfterMutation();
+      if (data.trash_id) showUndoToast(path, data.trash_id);
     })
     .catch(err => {
-      alert('Delete error: ' + err);
+      alert('Move error: ' + err);
       btn.disabled = false;
       btn.textContent = 'delete';
+    });
+}
+
+// Instant list refresh for the client that performed a delete/restore. The
+// file watcher fires memory_changed for the same mutation, and that SSE
+// handler refreshes staleness/consolidation/health/graph for every client.
+function refreshMemoriesAfterMutation() {
+  fetch('/api/memories').then(r => r.json()).then(d => {
+    memoriesData = d;
+    applyMemoriesView();
+  });
+}
+
+function fetchMemoryInsights() {
+  fetchStaleness();
+  fetchConsolidation();
+  fetchHealth();
+  fetchGraph();
+}
+
+function showUndoToast(path, trashID) {
+  const region = document.getElementById('toast-region');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  const message = document.createElement('span');
+  message.textContent = `Moved ${fileName(path)} to trash for 30 days.`;
+  const undo = document.createElement('button');
+  undo.type = 'button';
+  undo.textContent = 'Undo';
+  const dismiss = setTimeout(() => toast.remove(), 15000);
+  undo.addEventListener('click', () => {
+    clearTimeout(dismiss);
+    restoreMemory(trashID, toast, undo);
+  });
+  toast.append(message, undo);
+  region.appendChild(toast);
+}
+
+function restoreMemory(trashID, toast, button) {
+  button.disabled = true;
+  button.textContent = 'Restoring...';
+  fetch('/api/memories/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trash_id: trashID })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+      toast.querySelector('span').textContent = `Restored ${fileName(data.path || '')}.`;
+      button.remove();
+      refreshMemoriesAfterMutation();
+      setTimeout(() => toast.remove(), 3000);
+    })
+    .catch(err => {
+      toast.querySelector('span').textContent = 'Restore failed: ' + err.message;
+      button.disabled = false;
+      button.textContent = 'Retry';
     });
 }
 
@@ -2634,10 +2725,7 @@ function fetchAll() {
     renderMemories(data);
   }).catch(() => {});
 
-  fetchStaleness();
-  fetchConsolidation();
-  fetchHealth();
-  fetchGraph();
+  fetchMemoryInsights();
 }
 
 let authExpired = false;
@@ -2716,10 +2804,7 @@ function connectSSE() {
         }, 100);
       }
     });
-    fetchStaleness();
-    fetchConsolidation();
-    fetchHealth();
-    fetchGraph();
+    fetchMemoryInsights();
   });
 
   es.addEventListener('auth_status', e => {

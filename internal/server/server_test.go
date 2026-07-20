@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -277,7 +279,145 @@ func TestWriteJSONContentType(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
 	}
-	if cors := w.Header().Get("Access-Control-Allow-Origin"); cors != "*" {
-		t.Errorf("CORS header = %q, want %q", cors, "*")
+	if cors := w.Header().Get("Access-Control-Allow-Origin"); cors != "" {
+		t.Errorf("CORS header = %q, want it omitted", cors)
+	}
+}
+
+func TestMutationRejectsCrossOriginBrowserRequest(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	tests := []struct {
+		name         string
+		origin       string
+		secFetchSite string
+	}{
+		{name: "different host", origin: "https://example.com"},
+		{name: "different scheme", origin: "https://127.0.0.1:3131"},
+		{name: "cross-site fetch metadata", secFetchSite: "cross-site"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "http://127.0.0.1:3131/api/memories/delete", strings.NewReader(`{"path":"unused"}`))
+			req.Host = "127.0.0.1:3131"
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.secFetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tt.secFetchSite)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Mux.ServeHTTP(w, req)
+
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", w.Code)
+			}
+		})
+	}
+}
+
+func TestTrashAndRestoreMemoryRoutes(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	memoryDir := filepath.Join(srv.Handlers.claudeDir, "projects", "Users-test-project", "memory")
+	if err := os.MkdirAll(memoryDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	notePath := filepath.Join(memoryDir, "note.md")
+	if err := os.WriteFile(notePath, []byte("a useful memory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(memoryDir, "MEMORY.md")
+	if err := os.WriteFile(indexPath, []byte("- [Note](note.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	deleteBody, _ := json.Marshal(map[string]string{"path": notePath})
+	deleteReq := httptest.NewRequest("POST", "/api/memories/delete", bytes.NewReader(deleteBody))
+	deleteRecorder := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(deleteRecorder, deleteReq)
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want 200: %s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+	var deleteResult map[string]string
+	if err := json.NewDecoder(deleteRecorder.Body).Decode(&deleteResult); err != nil {
+		t.Fatal(err)
+	}
+	if deleteResult["trash_id"] == "" {
+		t.Fatal("delete response has no trash_id")
+	}
+	if _, err := os.Stat(notePath); !os.IsNotExist(err) {
+		t.Fatalf("memory remains at original path after trash: %v", err)
+	}
+
+	restoreBody, _ := json.Marshal(map[string]string{"trash_id": deleteResult["trash_id"]})
+	restoreReq := httptest.NewRequest("POST", "/api/memories/restore", bytes.NewReader(restoreBody))
+	restoreRecorder := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(restoreRecorder, restoreReq)
+	if restoreRecorder.Code != http.StatusOK {
+		t.Fatalf("restore status = %d, want 200: %s", restoreRecorder.Code, restoreRecorder.Body.String())
+	}
+	if _, err := os.Stat(notePath); err != nil {
+		t.Fatalf("memory was not restored: %v", err)
+	}
+}
+
+func TestMutationAllowsSameOriginAndDirectClients(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	for _, origin := range []string{"http://127.0.0.1:3131", ""} {
+		req := httptest.NewRequest("POST", "http://127.0.0.1:3131/api/memories/delete", strings.NewReader(`{}`))
+		req.Host = "127.0.0.1:3131"
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		w := httptest.NewRecorder()
+		srv.Mux.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("origin %q: status = %d, want handler response 400", origin, w.Code)
+		}
+	}
+}
+
+func TestMutationAllowsRequestsThroughReverseProxy(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	tests := []struct {
+		name     string
+		origin   string
+		proto    string
+		fwdHost  string
+		wantCode int
+	}{
+		// The proxy terminates TLS and forwards plain HTTP: the browser's
+		// Origin matches the forwarded scheme/host, not the loopback listener.
+		{name: "https proxy same host", origin: "https://claumon.example.com", proto: "https", fwdHost: "claumon.example.com", wantCode: http.StatusBadRequest},
+		{name: "chained proxies use first value", origin: "https://claumon.example.com", proto: "https, http", fwdHost: "claumon.example.com, 127.0.0.1:3131", wantCode: http.StatusBadRequest},
+		{name: "cross-origin page via proxy still rejected", origin: "https://evil.example.com", proto: "https", fwdHost: "claumon.example.com", wantCode: http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "http://127.0.0.1:3131/api/memories/delete", strings.NewReader(`{}`))
+			req.Host = "127.0.0.1:3131"
+			req.Header.Set("Origin", tt.origin)
+			req.Header.Set("X-Forwarded-Proto", tt.proto)
+			req.Header.Set("X-Forwarded-Host", tt.fwdHost)
+			w := httptest.NewRecorder()
+			srv.Mux.ServeHTTP(w, req)
+			if w.Code != tt.wantCode {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	req := httptest.NewRequest("GET", "/api/info", nil)
+	w := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(w, req)
+
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
 	}
 }

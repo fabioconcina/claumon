@@ -21,6 +21,7 @@ import (
 	"github.com/fabioconcina/claumon/internal/api"
 	"github.com/fabioconcina/claumon/internal/auth"
 	"github.com/fabioconcina/claumon/internal/forecast"
+	"github.com/fabioconcina/claumon/internal/memory"
 	"github.com/fabioconcina/claumon/internal/parser"
 	"github.com/fabioconcina/claumon/internal/pricing"
 	"github.com/fabioconcina/claumon/internal/server"
@@ -221,6 +222,7 @@ func main() {
 				if err := st.Prune(cfg.RetentionDays); err != nil {
 					log.Printf("[prune] Error: %v", err)
 				}
+				pruneMemoryTrash(cfg.ClaudeDir)
 				fcSvc.RefitAll(time.Now())
 			}
 		}
@@ -232,6 +234,7 @@ func main() {
 		if err := st.Prune(cfg.RetentionDays); err != nil {
 			log.Printf("[prune] Error: %v", err)
 		}
+		pruneMemoryTrash(cfg.ClaudeDir)
 	}()
 
 	// Initial daily aggregate
@@ -239,11 +242,15 @@ func main() {
 
 	// HTTP server
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		// The dashboard exposes local session details and process-control
+		// endpoints, so never publish it to the LAN implicitly. Remote access can
+		// still be provided deliberately through an authenticated tunnel or
+		// reverse proxy.
+		Addr:    fmt.Sprintf("127.0.0.1:%d", cfg.Port),
 		Handler: srv.Mux,
 	}
 
-	dashboardURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
+	dashboardURL := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
 	go func() {
 		log.Printf("[startup] dashboard available at %s", dashboardURL)
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
@@ -277,6 +284,17 @@ func main() {
 		w.Close()
 	}
 	log.Printf("[shutdown] bye")
+}
+
+func pruneMemoryTrash(claudeDir string) {
+	removed, err := memory.PruneTrash(claudeDir, time.Now())
+	if err != nil {
+		log.Printf("[trash] prune failed: %v", err)
+		return
+	}
+	if removed > 0 {
+		log.Printf("[trash] permanently removed %d expired entrie(s)", removed)
+	}
 }
 
 // checkUpdates polls GitHub for the latest release shortly after startup and
@@ -668,7 +686,7 @@ func runService() {
 			os.Exit(1)
 		}
 		fmt.Printf("claumon %s — service installed and started (port %d)\n", version, cfg.Port)
-		fmt.Printf("Dashboard: http://localhost:%d\n", cfg.Port)
+		fmt.Printf("Dashboard: http://127.0.0.1:%d\n", cfg.Port)
 		fmt.Println()
 		fmt.Println("claumon will start automatically on login.")
 		fmt.Println("To stop:   claumon service uninstall")

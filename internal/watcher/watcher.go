@@ -99,7 +99,16 @@ func (w *Watcher) Start(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+			// Remove/Rename matter too: moving a memory file to trash renames it
+			// out of its memory dir, and dashboards must hear about deletions.
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
+				continue
+			}
+
+			// The recoverable-deletion trash lives under claudeDir; churn inside
+			// it is bookkeeping, not a memory change, and watching its record
+			// dirs would leak one watch per deletion until pruning.
+			if w.inTrash(event.Name) {
 				continue
 			}
 
@@ -212,6 +221,11 @@ func (d *debouncer) stop() {
 		}
 	}
 	d.timers = make(map[string]*debounceEntry)
+}
+
+func (w *Watcher) inTrash(path string) bool {
+	trash := filepath.Join(w.claudeDir, ".claumon-trash")
+	return path == trash || strings.HasPrefix(path, trash+string(filepath.Separator))
 }
 
 func (w *Watcher) classifyAndDispatch(path string) {

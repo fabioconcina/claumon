@@ -27,5 +27,5 @@ First release. A thin VS Code client for a running [claumon](https://github.com/
 
 ### Notes
 
-- Client only: it connects to a claumon server you are already running (default `localhost:3131`) and does not start or bundle claumon.
+- Client only: it connects to a claumon server you are already running (default `127.0.0.1:3131`) and does not start or bundle claumon.
 - **Zero runtime dependencies**; compiled with `tsc`. Requires VS Code 1.85+.
