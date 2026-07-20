@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 - 2026-07-20
+
+### Changed
+
+- **Default host is now `127.0.0.1`** (was `localhost`). claumon v0.18.0 binds
+  explicitly to `127.0.0.1`, and `localhost` can resolve to `::1` on some
+  systems, which would fail to connect. Existing explicit `claumon.host`
+  settings are unaffected.
+
 ## 0.3.0 - 2026-06-26
 
 ### Added
