@@ -158,6 +158,24 @@ func (s *Store) SaveUsageSnapshot(sessionPct, weeklyPct float64, sessionReset, w
 	return nil
 }
 
+// LatestSnapshotTime returns the timestamp (UTC) of the most recent usage
+// snapshot. ok is false when no snapshot has ever been saved.
+func (s *Store) LatestSnapshotTime() (t time.Time, ok bool, err error) {
+	var ts string
+	err = s.db.QueryRow(`SELECT timestamp FROM usage_snapshots ORDER BY timestamp DESC LIMIT 1`).Scan(&ts)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading latest snapshot time: %w", err)
+	}
+	t, err = parseSnapshotTime(ts)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("parsing latest snapshot time %q: %w", ts, err)
+	}
+	return t, true, nil
+}
+
 func (s *Store) UpsertDailyAggregate(agg DailyAggregate) error {
 	_, err := s.db.Exec(`
 		INSERT INTO daily_aggregates (date, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, cost_usd, session_count, message_count)

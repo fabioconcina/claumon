@@ -118,6 +118,31 @@ func TestSaveUsageSnapshot(t *testing.T) {
 	}
 }
 
+func TestLatestSnapshotTime(t *testing.T) {
+	st := openTestStore(t)
+
+	// No snapshots yet: ok is false, no error.
+	if _, ok, err := st.LatestSnapshotTime(); err != nil || ok {
+		t.Fatalf("LatestSnapshotTime() on empty store = ok %v, err %v; want ok false, nil", ok, err)
+	}
+
+	raw := json.RawMessage(`{}`)
+	if err := st.SaveUsageSnapshot(10, 20, "", "", raw); err != nil {
+		t.Fatalf("SaveUsageSnapshot: %v", err)
+	}
+
+	before := time.Now().UTC()
+	last, ok, err := st.LatestSnapshotTime()
+	if err != nil || !ok {
+		t.Fatalf("LatestSnapshotTime() = ok %v, err %v; want ok true, nil", ok, err)
+	}
+	// CURRENT_TIMESTAMP has second precision, so the stored time can round down
+	// to just before the save; allow a couple of seconds of slack either way.
+	if diff := before.Sub(last); diff > 3*time.Second || diff < -3*time.Second {
+		t.Errorf("latest snapshot time %v is not within 3s of now %v (diff %v)", last, before, diff)
+	}
+}
+
 func TestGetHistoryRespectsDays(t *testing.T) {
 	st := openTestStore(t)
 

@@ -342,11 +342,27 @@ func checkUpdates(ctx context.Context, current string, handlers *server.Handlers
 }
 
 func pollUsage(ctx context.Context, client *api.Client, provider *auth.Provider, st *store.Store, broker *server.SSEBroker, handlers *server.Handlers, fcSvc *forecast.Service, interval time.Duration) {
-	// Initial fetch with a small delay to avoid hitting the API immediately on every restart
+	// Resume the poll cadence across restarts rather than always polling a few
+	// seconds after start. The poller's backoff is in-memory only, so without
+	// this a burst of restarts each fires an immediate poll and trips the usage
+	// API's rate limiter (429). If a recent snapshot exists, defer the first
+	// poll to its next interval boundary; a short floor still applies so the
+	// dashboard comes up promptly on a cold start.
+	initialDelay := 5 * time.Second
+	if last, ok, err := st.LatestSnapshotTime(); err != nil {
+		log.Printf("[poll] Could not read last snapshot time: %v", err)
+	} else if ok {
+		if wait := time.Until(last.Add(interval)); wait > initialDelay {
+			initialDelay = wait
+			log.Printf("[poll] Last snapshot %v ago; first poll in %v to resume cadence",
+				time.Since(last).Round(time.Second), initialDelay.Round(time.Second))
+		}
+	}
+
 	select {
 	case <-ctx.Done():
 		return
-	case <-time.After(5 * time.Second):
+	case <-time.After(initialDelay):
 	}
 	p := &poller{
 		client: client, provider: provider, st: st, broker: broker, handlers: handlers, forecast: fcSvc,
