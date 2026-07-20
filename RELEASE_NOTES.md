@@ -13,3 +13,7 @@
 - **Verifiable releases.** Release builds now include per-binary software bills
   of materials and GitHub build-provenance attestations alongside the existing
   SHA-256 checksums.
+
+*(v0.18.1 re-releases v0.18.0 with the build-provenance attestation step
+actually working: the workflow pointed at a checksums filename goreleaser
+didn't produce.)*

@@ -28,6 +28,11 @@ sboms:
   - artifacts: binary
     disable: false
 
+# The release workflow attests dist/checksums.txt; keep the name stable
+# instead of goreleaser's default {project}_{version}_checksums.txt.
+checksum:
+  name_template: "checksums.txt"
+
 brews:
   - ids:
       - homebrew
