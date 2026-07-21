@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -225,6 +226,90 @@ func RestoreFile(claudeDir, id string) (string, error) {
 
 func trashRoot(claudeDir string) string {
 	return filepath.Join(claudeDir, ".claumon-trash")
+}
+
+// TrashEntry describes one recoverable deletion for the trash explorer.
+type TrashEntry struct {
+	ID            string `json:"id"`
+	OriginalPath  string `json:"original_path"`
+	Project       string `json:"project"`
+	DeletedAt     string `json:"deleted_at"`
+	ExpiresAt     string `json:"expires_at"`
+	Content       string `json:"content"`
+	HTMLContent   string `json:"html_content"`
+	FMName        string `json:"fm_name,omitempty"`
+	FMDescription string `json:"fm_description,omitempty"`
+	FMType        string `json:"fm_type,omitempty"`
+}
+
+// ListTrash returns the recoverable deletions currently in the trash, newest
+// first. Malformed entries are skipped, mirroring PruneTrash's tolerance.
+func ListTrash(claudeDir string) ([]TrashEntry, error) {
+	trashMu.Lock()
+	defer trashMu.Unlock()
+
+	root := trashRoot(claudeDir)
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return []TrashEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	out := []TrashEntry{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		recordDir := filepath.Join(root, entry.Name())
+		data, err := os.ReadFile(filepath.Join(recordDir, "record.json"))
+		if err != nil {
+			continue
+		}
+		var record trashRecord
+		if err := json.Unmarshal(data, &record); err != nil || record.ID != entry.Name() {
+			continue
+		}
+
+		te := TrashEntry{
+			ID:           record.ID,
+			OriginalPath: record.OriginalPath,
+			Project:      projectFromMemoryPath(claudeDir, record.OriginalPath),
+			DeletedAt:    record.DeletedAt,
+		}
+		if deletedAt, err := time.Parse(time.RFC3339Nano, record.DeletedAt); err == nil {
+			te.ExpiresAt = deletedAt.Add(TrashRetention).Format(time.RFC3339Nano)
+		}
+		if body, err := os.ReadFile(filepath.Join(recordDir, "memory.md")); err == nil {
+			content := string(body)
+			fmName, fmDesc, fmType, mdBody := parseFrontmatter(content)
+			te.Content = content
+			te.HTMLContent = renderMarkdown(mdBody)
+			te.FMName = fmName
+			te.FMDescription = fmDesc
+			te.FMType = fmType
+		}
+		out = append(out, te)
+	}
+	// Trash IDs start with a UTC timestamp, so a reverse lexicographic sort
+	// orders entries newest first.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out, nil
+}
+
+// projectFromMemoryPath derives the decoded project name from a memory file
+// path shaped like <claudeDir>/projects/<encoded>/memory/<file>.md.
+func projectFromMemoryPath(claudeDir, path string) string {
+	rel, err := filepath.Rel(filepath.Join(claudeDir, "projects"), path)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(filepath.Clean(rel), string(filepath.Separator))
+	if len(parts) < 2 || parts[0] == ".." {
+		return ""
+	}
+	return DecodePath(parts[0])
 }
 
 // PruneTrash permanently removes recoverable deletions that are at least 30

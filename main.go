@@ -576,6 +576,17 @@ func buildUsageEvent(usage *api.UsageResponse) map[string]interface{} {
 		evt["weekly_design_pct"] = *usage.WeeklyDesignPct
 		evt["weekly_design_reset"] = formatDuration(api.ParseResetDuration(usage.WeeklyDesignReset))
 	}
+	if len(usage.WeeklyScoped) > 0 {
+		scoped := make([]map[string]interface{}, 0, len(usage.WeeklyScoped))
+		for _, s := range usage.WeeklyScoped {
+			scoped = append(scoped, map[string]interface{}{
+				"name":  s.Name,
+				"pct":   s.Percent,
+				"reset": formatDuration(api.ParseResetDuration(s.ResetAt)),
+			})
+		}
+		evt["weekly_scoped"] = scoped
+	}
 	if usage.ExtraUsageEnabled {
 		evt["extra_usage_enabled"] = true
 		if usage.ExtraUsageLimit != nil {

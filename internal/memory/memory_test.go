@@ -252,6 +252,70 @@ func TestRestoreFileRejectsInvalidID(t *testing.T) {
 	}
 }
 
+func TestListTrash(t *testing.T) {
+	dir := t.TempDir()
+
+	// An empty (nonexistent) trash lists as an empty, non-nil slice.
+	entries, err := ListTrash(dir)
+	if err != nil {
+		t.Fatalf("ListTrash() error: %v", err)
+	}
+	if entries == nil || len(entries) != 0 {
+		t.Fatalf("ListTrash() on empty trash = %v, want empty slice", entries)
+	}
+
+	memDir := filepath.Join(dir, "projects", "Users-fabio-Projects-test", "memory")
+	os.MkdirAll(memDir, 0755)
+	notePath := filepath.Join(memDir, "note.md")
+	os.WriteFile(notePath, []byte("---\nname: test note\ndescription: a trashed note\nmetadata:\n  type: project\n---\nBody text."), 0644)
+
+	trashID, err := TrashFile(dir, notePath)
+	if err != nil {
+		t.Fatalf("TrashFile() error: %v", err)
+	}
+
+	// A malformed trash entry (no record.json) is skipped, not an error.
+	os.MkdirAll(filepath.Join(trashRoot(dir), "malformed"), 0700)
+
+	entries, err = ListTrash(dir)
+	if err != nil {
+		t.Fatalf("ListTrash() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("ListTrash() returned %d entries, want 1", len(entries))
+	}
+	e := entries[0]
+	if e.ID != trashID {
+		t.Errorf("ID = %q, want %q", e.ID, trashID)
+	}
+	if e.OriginalPath != notePath {
+		t.Errorf("OriginalPath = %q, want %q", e.OriginalPath, notePath)
+	}
+	if e.Project != DecodePath("Users-fabio-Projects-test") {
+		t.Errorf("Project = %q, want decoded project path", e.Project)
+	}
+	if e.FMName != "test note" || e.FMDescription != "a trashed note" || e.FMType != "project" {
+		t.Errorf("frontmatter = %q/%q/%q", e.FMName, e.FMDescription, e.FMType)
+	}
+	if !strings.Contains(e.Content, "Body text.") {
+		t.Errorf("Content = %q, want the trashed file body", e.Content)
+	}
+	if !strings.Contains(e.HTMLContent, "Body text.") {
+		t.Errorf("HTMLContent = %q, want rendered body", e.HTMLContent)
+	}
+	deletedAt, err := time.Parse(time.RFC3339Nano, e.DeletedAt)
+	if err != nil {
+		t.Fatalf("DeletedAt %q does not parse: %v", e.DeletedAt, err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, e.ExpiresAt)
+	if err != nil {
+		t.Fatalf("ExpiresAt %q does not parse: %v", e.ExpiresAt, err)
+	}
+	if got := expiresAt.Sub(deletedAt); got != TrashRetention {
+		t.Errorf("ExpiresAt - DeletedAt = %v, want %v", got, TrashRetention)
+	}
+}
+
 func TestPruneTrashRemovesEntriesAfterThirtyDays(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)

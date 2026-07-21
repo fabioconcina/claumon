@@ -349,6 +349,28 @@ func TestTrashAndRestoreMemoryRoutes(t *testing.T) {
 		t.Fatalf("memory remains at original path after trash: %v", err)
 	}
 
+	trashRecorder := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(trashRecorder, httptest.NewRequest("GET", "/api/memories/trash", nil))
+	if trashRecorder.Code != http.StatusOK {
+		t.Fatalf("trash list status = %d, want 200: %s", trashRecorder.Code, trashRecorder.Body.String())
+	}
+	var trashList []map[string]interface{}
+	if err := json.NewDecoder(trashRecorder.Body).Decode(&trashList); err != nil {
+		t.Fatal(err)
+	}
+	if len(trashList) != 1 {
+		t.Fatalf("trash list has %d entries, want 1", len(trashList))
+	}
+	if trashList[0]["id"] != deleteResult["trash_id"] {
+		t.Errorf("trash entry id = %v, want %s", trashList[0]["id"], deleteResult["trash_id"])
+	}
+	if trashList[0]["original_path"] != notePath {
+		t.Errorf("trash entry original_path = %v, want %s", trashList[0]["original_path"], notePath)
+	}
+	if trashList[0]["content"] != "a useful memory" {
+		t.Errorf("trash entry content = %v", trashList[0]["content"])
+	}
+
 	restoreBody, _ := json.Marshal(map[string]string{"trash_id": deleteResult["trash_id"]})
 	restoreReq := httptest.NewRequest("POST", "/api/memories/restore", bytes.NewReader(restoreBody))
 	restoreRecorder := httptest.NewRecorder()
@@ -358,6 +380,12 @@ func TestTrashAndRestoreMemoryRoutes(t *testing.T) {
 	}
 	if _, err := os.Stat(notePath); err != nil {
 		t.Fatalf("memory was not restored: %v", err)
+	}
+
+	emptyRecorder := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(emptyRecorder, httptest.NewRequest("GET", "/api/memories/trash", nil))
+	if body := strings.TrimSpace(emptyRecorder.Body.String()); body != "[]" {
+		t.Errorf("trash list after restore = %s, want []", body)
 	}
 }
 

@@ -1,19 +1,15 @@
-## Security & safety
+## Dashboard
 
-- **Local-only by default.** The dashboard now binds explicitly to
-  `127.0.0.1`, so session details, memory files, and process controls are not
-  exposed to the local network. Cross-origin browser mutations are rejected,
-  and API responses no longer opt into permissive CORS.
+- **Weekly Fable gauge.** The dashboard now shows a dedicated gauge for the
+  Fable-only weekly limit, with utilization percentage, color-coded band, and
+  reset countdown next to the Session and Weekly gauges. Under the hood this
+  is fully dynamic: the usage API reports per-model weekly limits through a
+  new `limits` array (the legacy `seven_day_*` buckets are empty), and the
+  dashboard renders one gauge per model the API reports, so gauges for other
+  models appear automatically as their limits show up. `/api/usage` exposes
+  the data as `weekly_scoped`.
 
-- **Recoverable memory deletion.** Deleting a memory file now moves it into
-  claumon's local trash instead of removing it permanently. An **Undo** action
-  restores both the file and its `MEMORY.md` index entry. Trash is cleaned up
-  automatically after 30 days.
-
-- **Verifiable releases.** Release builds now include per-binary software bills
-  of materials and GitHub build-provenance attestations alongside the existing
-  SHA-256 checksums.
-
-*(v0.18.1 re-releases v0.18.0 with the build-provenance attestation step
-actually working: the workflow pointed at a checksums filename goreleaser
-didn't produce.)*
+- **Trash explorer.** The Memory tab has a new **Trash** view listing every
+  recoverable deletion: content preview, original location, deletion time,
+  days until permanent removal, and a one-click **restore**. No more digging
+  through `~/.claude/.claumon-trash` to find where a deleted memory went.

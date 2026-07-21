@@ -224,7 +224,7 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 ### Rate limits (live from the Claude API)
 
 - **Session** (5-hour) and **weekly** (7-day) utilization with reset countdowns
-- **Per-model** Opus/Sonnet weekly quotas and **extra-usage credits**, when applicable
+- **Per-model** weekly quotas (Fable, Opus, Sonnet, ... - one gauge per model the API reports) and **extra-usage credits**, when applicable
 - Gauges color-coded: green (<50%), yellow (50–80%), red (>80%)
 
 ### Forecasts
@@ -247,6 +247,7 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 - Browser for all memory files (CLAUDE.md, rules, per-project memories) with search, category filters, and staleness indicators
 - **Health scores** (A–F per file with improvement tips) and **staleness alerts** (broken MEMORY.md links, orphans, index mismatches)
 - Recoverable memory deletion: files move into `~/.claude/.claumon-trash`, can be restored immediately with **Undo**, and are removed permanently after 30 days
+- **Trash explorer**: a Trash view in the Memory tab lists recoverable deletions with content preview, original location, time until permanent removal, and one-click restore
 - An **interactive relationship graph** with project filters and click-to-navigate; click any file to open it in your editor via `vscode://`
 
 ## Keyboard shortcuts

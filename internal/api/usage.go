@@ -28,7 +28,15 @@ type UsageResponse struct {
 	ExtraUsageEnabled bool
 	ExtraUsageLimit   *float64
 	ExtraUsageUsed    *float64
+	WeeklyScoped      []ScopedWeeklyLimit
 	Raw              json.RawMessage
+}
+
+// ScopedWeeklyLimit is a per-model weekly limit from the "limits" array.
+type ScopedWeeklyLimit struct {
+	Name    string  // model display_name, e.g. "Fable"
+	Percent float64
+	ResetAt string // RFC3339
 }
 
 type rawUsageResponse struct {
@@ -58,6 +66,16 @@ type rawUsageResponse struct {
 		UsedCredits  *float64 `json:"used_credits"`
 		Utilization  *float64 `json:"utilization"`
 	} `json:"extra_usage"`
+	Limits []struct {
+		Kind     string  `json:"kind"`
+		Percent  float64 `json:"percent"`
+		ResetsAt *string `json:"resets_at"`
+		Scope    *struct {
+			Model *struct {
+				DisplayName string `json:"display_name"`
+			} `json:"model"`
+		} `json:"scope"`
+	} `json:"limits"`
 }
 
 // AuthError indicates an authentication failure that persists after credential reload.
@@ -212,6 +230,19 @@ func mapUsageResponse(raw rawUsageResponse, body []byte) *UsageResponse {
 		if raw.SevenDayDesign.ResetsAt != nil {
 			usage.WeeklyDesignReset = *raw.SevenDayDesign.ResetsAt
 		}
+	}
+	for _, l := range raw.Limits {
+		if l.Kind != "weekly_scoped" || l.Scope == nil || l.Scope.Model == nil || l.Scope.Model.DisplayName == "" {
+			continue
+		}
+		scoped := ScopedWeeklyLimit{
+			Name:    l.Scope.Model.DisplayName,
+			Percent: l.Percent,
+		}
+		if l.ResetsAt != nil {
+			scoped.ResetAt = *l.ResetsAt
+		}
+		usage.WeeklyScoped = append(usage.WeeklyScoped, scoped)
 	}
 	if raw.ExtraUsage != nil {
 		usage.ExtraUsageEnabled = raw.ExtraUsage.IsEnabled

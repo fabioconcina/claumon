@@ -269,6 +269,15 @@ func (h *Handlers) HandleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok", "trash_id": trashID})
 }
 
+func (h *Handlers) HandleMemoriesTrash(w http.ResponseWriter, r *http.Request) {
+	entries, err := memory.ListTrash(h.claudeDir)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, entries)
+}
+
 func (h *Handlers) HandleRestoreMemory(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TrashID string `json:"trash_id"`

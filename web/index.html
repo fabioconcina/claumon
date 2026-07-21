@@ -598,6 +598,24 @@ tr.clickable { cursor: pointer; }
 .memory-delete-btn:hover { opacity: 1; }
 .memory-delete-btn:disabled { opacity: 0.3; cursor: default; }
 
+/* Trash explorer */
+.trash-toggle.open { border-color: var(--danger, #e5534b); color: var(--danger, #e5534b); background: rgba(229, 83, 75, 0.08); }
+.trash-restore-btn {
+  font-size: 11px;
+  color: var(--green, #8fbc8f);
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  background: none;
+  border: 1px solid var(--green, #8fbc8f);
+  border-radius: 10px;
+  padding: 1px 10px;
+  margin-left: 10px;
+  cursor: pointer;
+}
+.trash-restore-btn:hover { opacity: 1; }
+.trash-restore-btn:disabled { opacity: 0.3; cursor: default; }
+.trash-expiry { font-size: 11px; color: var(--danger, #e5534b); }
+
 .empty-state { text-align: center; padding: 40px; color: var(--text-dim); }
 
 .toast-region {
@@ -968,48 +986,7 @@ tr.clickable { cursor: pointer; }
           <div class="forecast" id="weekly-forecast"></div>
         </div>
       </div>
-      <div class="gauge-card" id="gauge-opus-card" style="display:none">
-        <svg class="gauge-svg" viewBox="0 0 100 100">
-          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
-          <circle class="gauge-circle-fg" id="gauge-opus-fg" cx="50" cy="50" r="40"
-            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
-            transform="rotate(-90 50 50)"/>
-          <text class="gauge-text" x="50" y="50" id="gauge-opus-text">—</text>
-        </svg>
-        <div class="gauge-info">
-          <h3>Weekly Opus</h3>
-          <div class="pct" id="opus-pct">—</div>
-          <div class="reset" id="opus-reset"></div>
-        </div>
-      </div>
-      <div class="gauge-card" id="gauge-sonnet-card" style="display:none">
-        <svg class="gauge-svg" viewBox="0 0 100 100">
-          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
-          <circle class="gauge-circle-fg" id="gauge-sonnet-fg" cx="50" cy="50" r="40"
-            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
-            transform="rotate(-90 50 50)"/>
-          <text class="gauge-text" x="50" y="50" id="gauge-sonnet-text">—</text>
-        </svg>
-        <div class="gauge-info">
-          <h3>Weekly Sonnet</h3>
-          <div class="pct" id="sonnet-pct">—</div>
-          <div class="reset" id="sonnet-reset"></div>
-        </div>
-      </div>
-      <div class="gauge-card" id="gauge-design-card" style="display:none">
-        <svg class="gauge-svg" viewBox="0 0 100 100">
-          <circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>
-          <circle class="gauge-circle-fg" id="gauge-design-fg" cx="50" cy="50" r="40"
-            stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"
-            transform="rotate(-90 50 50)"/>
-          <text class="gauge-text" x="50" y="50" id="gauge-design-text">—</text>
-        </svg>
-        <div class="gauge-info">
-          <h3>Weekly Design</h3>
-          <div class="pct" id="design-pct">—</div>
-          <div class="reset" id="design-reset"></div>
-        </div>
-      </div>
+      <!-- Per-model weekly gauges are created dynamically by updateScopedGauges() -->
     </div>
 
     <div class="summary-cards" id="summary-cards">
@@ -1114,7 +1091,9 @@ tr.clickable { cursor: pointer; }
         <input type="text" id="memory-search" placeholder="Search across all memory files..." />
       </div>
       <div class="memories-filters" id="memories-filters"></div>
+      <button class="filter-btn trash-toggle" id="trash-toggle" style="display:none" onclick="toggleTrash()">Trash</button>
     </div>
+    <div id="trash-container" style="display:none"></div>
     <div id="memories-container"></div>
   </div>
 
@@ -1345,32 +1324,60 @@ function updateUsageGauges(data) {
   // If the forecast modal is open, refresh its chart in place with the new data.
   if (fcOpenGauge) loadForecastSample(fcOpenGauge, true);
 
-  // Opus gauge
-  const opusCard = document.getElementById('gauge-opus-card');
-  if (data.weekly_opus_pct > 0) {
-    opusCard.style.display = 'flex';
-    updateGauge('opus', data.weekly_opus_pct, data.weekly_opus_reset || '');
-  } else {
-    opusCard.style.display = 'none';
-  }
+  updateScopedGauges(data);
+}
 
-  // Sonnet gauge
-  const sonnetCard = document.getElementById('gauge-sonnet-card');
-  if (data.weekly_sonnet_pct > 0) {
-    sonnetCard.style.display = 'flex';
-    updateGauge('sonnet', data.weekly_sonnet_pct, data.weekly_sonnet_reset || '');
-  } else {
-    sonnetCard.style.display = 'none';
+// Per-model weekly gauges, created dynamically from the API's weekly_scoped
+// list (fallback: legacy weekly_<family>_pct fields from older API shapes).
+function updateScopedGauges(data) {
+  let scoped = data.weekly_scoped;
+  if (!Array.isArray(scoped)) {
+    scoped = [];
+    for (const [key, name] of [['opus', 'Opus'], ['sonnet', 'Sonnet'], ['design', 'Design']]) {
+      if (data['weekly_' + key + '_pct'] > 0) {
+        scoped.push({ name, pct: data['weekly_' + key + '_pct'], reset: data['weekly_' + key + '_reset'] || '' });
+      }
+    }
   }
+  const container = document.getElementById('gauges');
+  const seen = new Set();
+  for (const s of scoped) {
+    if (!(s.pct > 0) || !s.name) continue;
+    const id = 'scoped-' + s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    seen.add(id);
+    let card = document.getElementById('gauge-' + id + '-card');
+    if (!card) card = createScopedGaugeCard(container, id, s.name);
+    card.style.display = 'flex';
+    updateGauge(id, s.pct, s.reset || '');
+  }
+  // Remove cards for scoped entries no longer in the payload
+  for (const card of container.querySelectorAll('.gauge-card[data-scoped]')) {
+    const id = card.id.replace(/^gauge-/, '').replace(/-card$/, '');
+    if (!seen.has(id)) card.remove();
+  }
+}
 
-  // Design gauge (Claude Design)
-  const designCard = document.getElementById('gauge-design-card');
-  if (data.weekly_design_pct > 0) {
-    designCard.style.display = 'flex';
-    updateGauge('design', data.weekly_design_pct, data.weekly_design_reset || '');
-  } else {
-    designCard.style.display = 'none';
-  }
+function createScopedGaugeCard(container, id, name) {
+  const card = document.createElement('div');
+  card.className = 'gauge-card';
+  card.id = 'gauge-' + id + '-card';
+  card.dataset.scoped = '1';
+  card.innerHTML =
+    '<svg class="gauge-svg" viewBox="0 0 100 100">' +
+      '<circle class="gauge-circle-bg" cx="50" cy="50" r="40"/>' +
+      '<circle class="gauge-circle-fg" id="gauge-' + id + '-fg" cx="50" cy="50" r="40"' +
+        ' stroke-dasharray="251.33" stroke-dashoffset="251.33" stroke="var(--green)"' +
+        ' transform="rotate(-90 50 50)"/>' +
+      '<text class="gauge-text" x="50" y="50" id="gauge-' + id + '-text">—</text>' +
+    '</svg>' +
+    '<div class="gauge-info">' +
+      '<h3></h3>' +
+      '<div class="pct" id="' + id + '-pct">—</div>' +
+      '<div class="reset" id="' + id + '-reset"></div>' +
+    '</div>';
+  card.querySelector('h3').textContent = 'Weekly ' + name; // textContent: name comes from the API
+  container.appendChild(card);
+  return card;
 }
 
 // --- Bar Chart (SVG) ---
@@ -2059,6 +2066,7 @@ function refreshMemoriesAfterMutation() {
     memoriesData = d;
     applyMemoriesView();
   });
+  fetchTrash();
 }
 
 function fetchMemoryInsights() {
@@ -2066,6 +2074,7 @@ function fetchMemoryInsights() {
   fetchConsolidation();
   fetchHealth();
   fetchGraph();
+  fetchTrash();
 }
 
 function showUndoToast(path, trashID) {
@@ -2106,6 +2115,120 @@ function restoreMemory(trashID, toast, button) {
       toast.querySelector('span').textContent = 'Restore failed: ' + err.message;
       button.disabled = false;
       button.textContent = 'Retry';
+    });
+}
+
+// --- Trash Explorer ---
+let trashData = [];
+let trashOpen = false;
+
+function fetchTrash() {
+  fetch('/api/memories/trash').then(r => r.json()).then(d => {
+    trashData = Array.isArray(d) ? d : [];
+    renderTrash();
+  }).catch(() => {});
+}
+
+function toggleTrash() {
+  trashOpen = !trashOpen;
+  renderTrash();
+}
+
+function renderTrash() {
+  const btn = document.getElementById('trash-toggle');
+  const container = document.getElementById('trash-container');
+  if (!trashData.length) {
+    trashOpen = false;
+    btn.style.display = 'none';
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  btn.style.display = '';
+  btn.textContent = 'Trash';
+  btn.classList.toggle('open', trashOpen);
+  const count = document.createElement('span');
+  count.className = 'filter-count';
+  count.textContent = trashData.length;
+  btn.appendChild(count);
+  if (!trashOpen) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  container.style.display = '';
+  container.innerHTML = `
+    <div class="memory-section open">
+      <div class="memory-section-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="chevron">&#9654;</span>
+          <h3>Trash</h3>
+        </div>
+        <span class="badge">${trashData.length} file${trashData.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="memory-section-body">
+        ${trashData.map(e => renderTrashCard(e)).join('')}
+      </div>
+    </div>
+  `;
+  container.querySelector('.memory-section-header').addEventListener('click', ev => {
+    ev.currentTarget.parentElement.classList.toggle('open');
+  });
+}
+
+function renderTrashCard(e) {
+  const deleted = e.deleted_at ? new Date(e.deleted_at) : null;
+  const expires = e.expires_at ? new Date(e.expires_at) : null;
+  const daysLeft = expires ? Math.max(0, Math.ceil((expires - Date.now()) / 86400000)) : null;
+  const proj = e.project ? shortProject(e.project) : 'Global';
+
+  let badgesHtml = '';
+  if (e.fm_name || e.fm_type || e.fm_description) {
+    badgesHtml = '<div class="fm-badges">';
+    if (e.fm_type) badgesHtml += `<span class="fm-badge ${fmTypeColors[e.fm_type] || ''}">${escHtml(e.fm_type)}</span>`;
+    badgesHtml += '</div>';
+    if (e.fm_name) badgesHtml += `<div class="fm-name">${escHtml(e.fm_name)}</div>`;
+    if (e.fm_description) badgesHtml += `<div class="fm-desc">${escHtml(e.fm_description)}</div>`;
+  }
+
+  return `
+    <div class="memory-file" data-trash-id="${escHtml(e.id)}">
+      <div class="memory-file-header">
+        <span class="path" title="${escHtml(e.original_path)}">${escHtml(proj)}: ${escHtml(fileName(e.original_path))}
+          <button class="trash-restore-btn" onclick="restoreFromTrash(this)">restore</button>
+        </span>
+        <span class="meta">
+          ${daysLeft !== null ? `<span class="trash-expiry">purged in ${daysLeft}d</span> · ` : ''}
+          deleted ${deleted ? deleted.toLocaleString() : '?'}
+        </span>
+      </div>
+      ${badgesHtml ? '<div style="padding:8px 14px 0">' + badgesHtml + '</div>' : ''}
+      <div class="memory-file-content">${e.html_content || '<em>Empty</em>'}</div>
+    </div>
+  `;
+}
+
+function restoreFromTrash(btn) {
+  const card = btn.closest('.memory-file');
+  if (!card) return;
+  const trashID = card.getAttribute('data-trash-id');
+  btn.disabled = true;
+  btn.textContent = 'restoring...';
+  fetch('/api/memories/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trash_id: trashID })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+      refreshMemoriesAfterMutation();
+      fetchTrash();
+    })
+    .catch(err => {
+      alert('Restore failed: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'restore';
     });
 }
 
