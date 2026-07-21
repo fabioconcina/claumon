@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 - 2026-07-21
+
+### Added
+
+- **Per-model weekly limits in the tooltip** (e.g. **Weekly (Fable)**), read
+  from the server's new `weekly_scoped` usage field with reset countdowns.
+  Requires claumon v0.19.0+; older servers fall back to the legacy
+  Opus-only field.
+
 ## 0.3.1 - 2026-07-20
 
 ### Changed

@@ -174,7 +174,12 @@ export class StatusBar {
     md.appendMarkdown(this.forecastLines(u.forecast?.session));
     md.appendMarkdown(line("Weekly", u.weekly_pct, u.weekly_reset));
     md.appendMarkdown(this.forecastLines(u.forecast?.weekly));
-    if (typeof u.weekly_opus_pct === "number") {
+    if (Array.isArray(u.weekly_scoped) && u.weekly_scoped.length > 0) {
+      for (const s of u.weekly_scoped) {
+        md.appendMarkdown(line(`Weekly (${s.name})`, s.pct, s.reset));
+      }
+    } else if (typeof u.weekly_opus_pct === "number") {
+      // Fallback for servers older than the weekly_scoped list.
       md.appendMarkdown(line("Weekly (Opus)", u.weekly_opus_pct));
     }
 

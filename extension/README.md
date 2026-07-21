@@ -37,7 +37,7 @@ Install from VSIX...** from the Command Palette.
 - **Status bar item** showing your current session (or weekly) usage percentage,
   updated live over claumon's SSE stream. When a forecast is available it also
   shows the projected percentage at reset (e.g. `45%->72% session`). The tooltip
-  breaks down session/weekly (and Opus/Sonnet) percentages, reset times, the
+  breaks down session/weekly (and per-model, e.g. Fable) percentages, reset times, the
   forecast (projected % with its 80% confidence interval and threshold ETA), and
   any auth or poll errors. It turns yellow at >= 75% and red at >= 90% of
   current usage, and also turns yellow when the forecast projects you'll exceed

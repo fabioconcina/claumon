@@ -21,6 +21,13 @@ export interface ForecastPayload {
   etas?: ForecastEta[];
 }
 
+/** One per-model weekly limit from the server's `weekly_scoped` list. */
+export interface ScopedWeeklyLimit {
+  name: string;
+  pct: number;
+  reset?: string;
+}
+
 /**
  * Usage payload returned by GET /api/usage and broadcast on the `usage` SSE
  * event. Only the fields the extension renders are typed; the server may send
@@ -33,7 +40,9 @@ export interface UsagePayload {
   weekly_reset?: string;
   session_reset_at?: string;
   weekly_reset_at?: string;
+  /** Legacy per-model field from servers before weekly_scoped existed. */
   weekly_opus_pct?: number | null;
+  weekly_scoped?: ScopedWeeklyLimit[];
   last_poll_at?: number;
   poll_error?: string;
   available?: boolean;
