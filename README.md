@@ -1,4 +1,5 @@
 [![GitHub release](https://img.shields.io/github/v/release/fabioconcina/claumon?filter=!ext-*)](https://github.com/fabioconcina/claumon/releases/latest)
+[![Homebrew](https://img.shields.io/badge/homebrew-fabioconcina%2Fclaumon-orange?logo=homebrew&logoColor=white)](https://github.com/fabioconcina/homebrew-claumon)
 [![Go version](https://img.shields.io/github/go-mod/go-version/fabioconcina/claumon)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-brightgreen)](https://github.com/fabioconcina/claumon/releases/latest)
@@ -6,36 +7,25 @@
 
 # claumon
 
-**See where your Claude Code limits are headed before you hit them.**
+**See where your Claude Code limits are headed before you hit them - and manage everything Claude Code leaves on your machine.**
 
-Single binary, zero config, one browser tab. Runs on macOS, Linux, and Windows.
+Works with any `claude /login` plan: Pro, Max, or a Team/Enterprise seat. Forecasts come from a published, benchmarked statistical model, not a burn-rate guess. Single binary, zero config, one browser tab. Runs on macOS, Linux, and Windows.
 
 ## Why claumon?
 
-Anthropic's usage analytics dashboard is for Team and Enterprise org admins; it is [not available to individual Pro or Max plans](https://support.claude.com/en/articles/12157520). What individuals get (`/usage`, the claude.ai usage page) shows where you stand right now - but no history, no per-session costs, and no idea where you're heading before the limit hits. claumon is that missing dashboard, running locally on your machine.
+Anthropic's usage analytics dashboard is for Team and Enterprise org admins; it is [not available to individual Pro or Max plans](https://support.claude.com/en/articles/12157520), and even for admins it is org-level analytics, not a live view of your own machine. What you get personally (`/usage`, the claude.ai usage page) shows where you stand right now - but no history, no per-session costs, and no idea where you're heading before the limit hits. claumon is that missing personal dashboard, running locally, whatever plan you're on.
 
 What sets it apart:
 
-- **Live rate-limit gauges.** Session, weekly, and per-model utilization straight from the Claude OAuth usage API - measured, not estimated from logs.
 - **Forecasts you can check.** Projected utilization at reset with an 80% credible interval and ETA-to-threshold, from an empirical-Bayes model refit daily on your own usage history. The model is published ([MODEL.pdf](internal/forecast/MODEL.pdf)) and benchmarked out-of-sample with proper scoring rules - not a burn-rate extrapolation or a percentile heuristic.
-- **Your whole `~/.claude` footprint in one place.** Per-session token and cost breakdowns, historical trends in SQLite, running-process control, and a memory-file browser with health scores and a relationship graph.
+- **Live rate-limit gauges.** Session, weekly, and per-model utilization straight from the Claude OAuth usage API - measured, not estimated from logs.
+- **Your whole `~/.claude` footprint in one place.** Usage trackers stop at tokens and cost; claumon also manages what Claude Code accumulates on disk - per-session cost breakdowns, historical trends in SQLite, running-process control, and a memory-file browser with health scores, a relationship graph, and recoverable deletion.
 
 Everything updates in real time via SSE, and daily aggregates persist in SQLite so you can track usage over weeks, not just the current session. No Node, no Python, no build step, no config. Run it and open a browser tab.
 
 ## How it compares
 
-Honest snapshot (June 2026), based on each project's documentation:
-
-| | claumon | [ccusage](https://github.com/ryoppippi/ccusage) | [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | [claude-usage](https://github.com/phuryn/claude-usage) |
-|---|---|---|---|---|
-| Interface | Local web UI | CLI reports | Terminal TUI | Local web UI |
-| Runtime | Single Go binary | Node (npx) | Python (pip/uv) | Python |
-| Rate limits | Live from OAuth usage API | Derived from local logs | Estimated from local logs | - |
-| Forecasting | Calibrated credible intervals, benchmarked ([spec](internal/forecast/MODEL.pdf)) | Burn-rate projection (live mode) | P90 percentile heuristic | - |
-| Cost & history | SQLite, daily aggregates, trends | JSONL reports | Session window | SQLite, charts |
-| Memory-file browser & graph | Yes | - | - | - |
-
-If you want quick CLI cost reports, ccusage is excellent and more battle-tested. claumon is for keeping a live dashboard open: where your limits stand, where they'll land, and what's in your `~/.claude`.
+There are many good usage trackers for Claude Code: statuslines, CLI reporters like [ccusage](https://github.com/ryoppippi/ccusage) (excellent for quick cost reports), menu-bar apps, and other dashboards. Most estimate your limits from local logs. claumon is for keeping a live dashboard open: rate limits measured from the OAuth usage API rather than estimated, forecasts that are calibrated and benchmarked ([spec](internal/forecast/MODEL.pdf)), and your whole `~/.claude` (sessions, costs, memory files) in one place.
 
 <p align="center">
   <img src="assets/overview.png" alt="claumon dashboard" width="700"><br>
@@ -96,7 +86,7 @@ files, and process controls are never exposed to the local network. For access
 from another machine, keep claumon on loopback and use an authenticated SSH
 tunnel or reverse proxy rather than publishing port 3131 directly.
 
-claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works. Only the API usage gauges are unavailable.
+claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Linux secret-service via `secret-tool`, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works. Only the API usage gauges are unavailable.
 
 ### Command-line flags
 
@@ -225,7 +215,7 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 
 - **Session** (5-hour) and **weekly** (7-day) utilization with reset countdowns
 - **Per-model** weekly quotas (Fable, Opus, Sonnet, ... - one gauge per model the API reports) and **extra-usage credits**, when applicable
-- Gauges color-coded: green (<50%), yellow (50–80%), red (>80%)
+- Gauges color-coded: green (<50%), yellow (50–79%), red (≥80%)
 
 ### Forecasts
 
@@ -280,17 +270,18 @@ Optional. Create `~/.claumon/config.json`:
   "credentials_path": "~/.claude/.credentials.json",
   "claude_dir": "~/.claude",
   "db_path": "~/.claumon/usage.db",
+  "retention_days": 90,
   "stuck_threshold_minutes": 10
 }
 ```
 
-All fields are optional. Defaults are shown above; claumon works without a config file.
+All fields are optional. Defaults are shown above; claumon works without a config file. `retention_days` controls how long usage snapshots and daily aggregates are kept before being pruned. A `pricing_overrides` map can also be set to override per-model pricing, keyed by model ID with `input`, `output`, `cache_read`, `cache_write_5m`, and `cache_write_1h` USD-per-million-token rates.
 
 ## Data storage
 
 claumon stores usage snapshots and daily aggregates in a SQLite database at `~/.claumon/usage.db`. Historical data is backfilled automatically on first startup by scanning all existing session files.
 
-The database uses WAL mode for concurrent reads during writes. No maintenance required.
+The database uses WAL mode for concurrent reads during writes. No maintenance required: data older than 90 days (configurable via `retention_days`) is pruned automatically.
 
 ## How it works
 
