@@ -1,0 +1,25 @@
+name: Check Homebrew tap token
+
+# Manual sanity check for the HOMEBREW_TAP_TOKEN secret used by the release
+# workflow to push the formula to fabioconcina/homebrew-claumon. Run it after
+# rotating the token instead of waiting for the next release to find out.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read tap repo metadata with the token
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo=fabioconcina/homebrew-claumon
+          perms=$(gh api "repos/$repo" --jq '.permissions')
+          echo "permissions: $perms"
+          if [ "$(echo "$perms" | jq -r '.push')" != "true" ]; then
+            echo "::error::token cannot push to $repo (needs Contents: read and write)"
+            exit 1
+          fi
+          echo "token OK: can read and push to $repo"
