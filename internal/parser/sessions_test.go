@@ -20,6 +20,11 @@ func TestNormalizeModel(t *testing.T) {
 		input string
 		want  string
 	}{
+		{"claude-fable-5-1", "claude-fable-5-1"},
+		{"claude-fable-5-1-20260901", "claude-fable-5-1"},
+		{"claude-fable-5", "claude-fable-5"},
+		{"claude-opus-5", "claude-opus-5"},
+		{"claude-sonnet-5", "claude-sonnet-5"},
 		{"claude-opus-4-8", "claude-opus-4-8"},
 		{"claude-opus-4-8-20260101", "claude-opus-4-8"},
 		{"claude-opus-4-7", "claude-opus-4-7"},
@@ -33,10 +38,11 @@ func TestNormalizeModel(t *testing.T) {
 		{"claude-haiku-4-5-20251001", "claude-haiku-4-5"},
 		{"claude-haiku-3-5", "claude-haiku-3-5"},
 		// Family-based fallback
-		{"some-opus-model", "claude-opus-4-8"},
+		{"some-fable-model", "claude-fable-5-1"},
+		{"some-opus-model", "claude-opus-5"},
 		{"some-haiku-model", "claude-haiku-4-5"},
-		{"unknown-model", "claude-sonnet-4-6"},
-		{"", "claude-sonnet-4-6"},
+		{"unknown-model", "claude-sonnet-5"},
+		{"", "claude-sonnet-5"},
 	}
 
 	for _, tt := range tests {
@@ -89,7 +95,7 @@ func TestEstimateCost(t *testing.T) {
 				Model:       "unknown-model-v99",
 				InputTokens: 1_000_000,
 			},
-			want: 3.0, // sonnet input pricing
+			want: 2.0, // sonnet 5 input pricing
 		},
 	}
 
