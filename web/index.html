@@ -923,6 +923,13 @@ tr.clickable { cursor: pointer; }
 /* Bar chart via SVG */
 .bar-chart { width: 100%; }
 .bar-label { font-size: 10px; fill: var(--text-dim); }
+.history-range-label { text-transform: none; letter-spacing: 0; }
+.history-range-select {
+  font: inherit; font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0;
+  color: var(--text-dim); background: var(--bg-hover); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 6px; cursor: pointer;
+}
+.history-range-select:focus { outline: none; border-color: var(--accent); }
 .bar-value { font-size: 9px; fill: var(--text-dim); }
 </style>
 </head>
@@ -1014,16 +1021,23 @@ tr.clickable { cursor: pointer; }
 
     <div class="charts">
       <div class="chart-card">
-        <h3 style="display:flex;align-items:center;gap:12px">Daily Tokens (14 days)
+        <h3 style="display:flex;align-items:center;gap:12px">Daily Tokens <span class="history-range-label">(14 days)</span>
           <label style="font-size:11px;font-weight:400;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;gap:4px">
             <input type="checkbox" id="billable-toggle" style="accent-color:var(--accent)"> Billable only
           </label>
+          <select id="history-range" class="history-range-select" title="History window">
+            <option value="7">7 days</option>
+            <option value="14" selected>14 days</option>
+            <option value="30">30 days</option>
+            <option value="60">60 days</option>
+            <option value="90">90 days</option>
+          </select>
           <span id="tokens-total" style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text-dim)"></span>
         </h3>
         <div id="chart-tokens"></div>
       </div>
       <div class="chart-card">
-        <h3 style="display:flex;align-items:center;gap:12px">Equiv. API Cost (14 days)
+        <h3 style="display:flex;align-items:center;gap:12px">Equiv. API Cost <span class="history-range-label">(14 days)</span>
           <span id="cost-total" style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text-dim)"></span>
         </h3>
         <div id="chart-cost"></div>
@@ -1381,6 +1395,16 @@ function createScopedGaugeCard(container, id, name) {
 }
 
 // --- Bar Chart (SVG) ---
+// Bar geometry shared by the daily charts. Gap and minimum width shrink as
+// the window grows so 90 bars still fit the 600px viewBox; per-bar value
+// labels and every-other-day date labels are thinned out accordingly.
+function barLayout(n, w, pad) {
+  const barGap = n > 30 ? 1 : n > 14 ? 2 : 4;
+  const barW = Math.max(2, (w - pad * 2) / n - barGap);
+  const labelStep = n <= 7 ? 1 : Math.ceil(n / 7);
+  return { barGap, barW, labelStep, showValues: barW >= 14 };
+}
+
 function renderBarChart(containerId, data, valueKey, colorFn) {
   const container = document.getElementById(containerId);
   if (!data.length) {
@@ -1393,8 +1417,8 @@ function renderBarChart(containerId, data, valueKey, colorFn) {
     return d[valueKey] || 0;
   }), 1);
 
-  const w = 600, h = 180, pad = 30, barGap = 4;
-  const barW = Math.max(8, (w - pad * 2) / data.length - barGap);
+  const w = 600, h = 180, pad = 30;
+  const { barGap, barW, labelStep, showValues } = barLayout(data.length, w, pad);
 
   let svg = `<svg viewBox="0 0 ${w} ${h}" class="bar-chart" preserveAspectRatio="xMidYMid meet">`;
 
@@ -1417,12 +1441,12 @@ function renderBarChart(containerId, data, valueKey, colorFn) {
     </rect>`;
 
     // Value label on top of bar
-    if (val > 0) {
+    if (val > 0 && showValues) {
       const label = valueKey === 'cost_usd' ? '$' + Math.round(val) : fmtNum(val);
       svg += `<text x="${x + barW/2}" y="${y - 4}" class="bar-value" text-anchor="middle">${label}</text>`;
     }
 
-    if (i % 2 === 0 || data.length <= 7) {
+    if (i % labelStep === 0) {
       const dateLabel = d.date ? d.date.slice(5) : '';
       svg += `<text x="${x + barW/2}" y="${h - 8}" class="bar-label" text-anchor="middle">${dateLabel}</text>`;
     }
@@ -1484,6 +1508,43 @@ function renderCostTotal(data) {
 }
 
 document.getElementById('billable-toggle').addEventListener('change', renderTokensChart);
+
+// --- History window (7-90 days, shared by both daily charts) ---
+const HISTORY_RANGES = [7, 14, 30, 60, 90];
+let historyDays = 14;
+try {
+  const saved = parseInt(localStorage.getItem('claumon.historyDays'), 10);
+  if (HISTORY_RANGES.includes(saved)) historyDays = saved;
+} catch (e) {}
+document.getElementById('history-range').value = String(historyDays);
+
+function applyHistory(data) {
+  historyData = data;
+  document.querySelectorAll('.history-range-label').forEach(el => {
+    el.textContent = `(${historyDays} days)`;
+  });
+  renderTokensChart();
+  renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
+  renderCostTotal(data);
+}
+
+// onlyIfChanged skips the re-render on periodic polls when nothing moved.
+function fetchHistory(onlyIfChanged) {
+  const days = historyDays;
+  fetch(`/api/history?days=${days}`).then(r => r.json()).then(data => {
+    if (days !== historyDays) return; // range changed while in flight
+    if (onlyIfChanged && JSON.stringify(data) === JSON.stringify(historyData)) return;
+    applyHistory(data);
+  }).catch(() => {});
+}
+
+document.getElementById('history-range').addEventListener('change', e => {
+  const n = parseInt(e.target.value, 10);
+  if (!HISTORY_RANGES.includes(n)) return;
+  historyDays = n;
+  try { localStorage.setItem('claumon.historyDays', String(n)); } catch (e2) {}
+  fetchHistory(false);
+});
 
 // --- Running Processes ---
 function renderProcesses(procs) {
@@ -1558,8 +1619,8 @@ function renderBillableChart(containerId, data) {
     keys.reduce((sum, k) => sum + (d[k] || 0), 0)
   ), 1);
 
-  const w = 600, h = 180, pad = 30, barGap = 4;
-  const barW = Math.max(8, (w - pad * 2) / data.length - barGap);
+  const w = 600, h = 180, pad = 30;
+  const { barGap, barW, labelStep, showValues } = barLayout(data.length, w, pad);
 
   let svg = `<svg viewBox="0 0 ${w} ${h}" class="bar-chart" preserveAspectRatio="xMidYMid meet">`;
 
@@ -1583,11 +1644,11 @@ function renderBillableChart(containerId, data) {
       </rect>`;
     });
 
-    if (total > 0) {
+    if (total > 0 && showValues) {
       svg += `<text x="${x + barW/2}" y="${cumY - 4}" class="bar-value" text-anchor="middle">${fmtNum(total)}</text>`;
     }
 
-    if (i % 2 === 0 || data.length <= 7) {
+    if (i % labelStep === 0) {
       svg += `<text x="${x + barW/2}" y="${h - 8}" class="bar-label" text-anchor="middle">${(d.date||'').slice(5)}</text>`;
     }
   });
@@ -2829,12 +2890,7 @@ function fetchAll() {
   fetchSessions();
   fetchProcesses();
 
-  fetch('/api/history?days=14').then(r => r.json()).then(data => {
-    historyData = data;
-    renderTokensChart();
-    renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
-    renderCostTotal(data);
-  }).catch(() => {});
+  fetchHistory(false);
 
   fetch('/api/usage').then(r => r.json()).then(updateUsageGauges).catch(() => {});
 
@@ -2988,14 +3044,7 @@ setInterval(() => {
     showAuthBanner(data.status, data.message);
   }).catch(() => {});
   // Refresh history charts too (new daily aggregates from backfill)
-  fetch('/api/history?days=14').then(r => r.json()).then(data => {
-    if (JSON.stringify(data) !== JSON.stringify(historyData)) {
-      historyData = data;
-      renderTokensChart();
-      renderBarChart('chart-cost', data, 'cost_usd', () => 'var(--green)');
-      renderCostTotal(data);
-    }
-  }).catch(() => {});
+  fetchHistory(true);
 }, 60000);
 
 // --- Forecast trajectory modal ---

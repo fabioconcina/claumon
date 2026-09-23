@@ -29,7 +29,7 @@ There are many good usage trackers for Claude Code: statuslines, CLI reporters l
 
 <p align="center">
   <img src="assets/overview.png" alt="claumon dashboard" width="700"><br>
-  <sub>Live dashboard: rate-limit gauges, token and cost breakdowns, and 14-day trends.</sub>
+  <sub>Live dashboard: rate-limit gauges, token and cost breakdowns, and daily trends over a selectable 7 to 90 day window.</sub>
 </p>
 
 <p align="center">
@@ -225,7 +225,7 @@ Remove-Item -Recurse "$env:USERPROFILE\.claumon"
 ### Tokens & cost
 
 - Per-session input / output / cache token breakdowns with **estimated API-equivalent cost**
-- **Daily aggregates** with 14-day trend charts and a 24-hour activity heatmap
+- **Daily aggregates** with trend charts over a selectable window (7, 14, 30, 60, or 90 days) and a 24-hour activity heatmap
 
 ### Sessions & processes
 

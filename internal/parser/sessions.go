@@ -238,6 +238,8 @@ func normalizeModel(model string) string {
 	switch {
 	case strings.Contains(model, "fable"):
 		return "claude-fable-5-1"
+	case strings.Contains(model, "mythos"):
+		return "claude-mythos-5-1"
 	case strings.Contains(model, "opus"):
 		return "claude-opus-5"
 	case strings.Contains(model, "haiku"):

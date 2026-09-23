@@ -23,6 +23,10 @@ func TestNormalizeModel(t *testing.T) {
 		{"claude-fable-5-1", "claude-fable-5-1"},
 		{"claude-fable-5-1-20260901", "claude-fable-5-1"},
 		{"claude-fable-5", "claude-fable-5"},
+		{"claude-mythos-5-1", "claude-mythos-5-1"},
+		{"claude-mythos-5", "claude-mythos-5"},
+		{"claude-opus-5-5", "claude-opus-5-5"},
+		{"claude-opus-5-5-20261001", "claude-opus-5-5"},
 		{"claude-opus-5", "claude-opus-5"},
 		{"claude-sonnet-5", "claude-sonnet-5"},
 		{"claude-opus-4-8", "claude-opus-4-8"},
@@ -39,6 +43,7 @@ func TestNormalizeModel(t *testing.T) {
 		{"claude-haiku-3-5", "claude-haiku-3-5"},
 		// Family-based fallback
 		{"some-fable-model", "claude-fable-5-1"},
+		{"some-mythos-model", "claude-mythos-5-1"},
 		{"some-opus-model", "claude-opus-5"},
 		{"some-haiku-model", "claude-haiku-4-5"},
 		{"unknown-model", "claude-sonnet-5"},

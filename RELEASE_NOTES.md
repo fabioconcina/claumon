@@ -1,16 +1,17 @@
-## Pricing: Fable 5.1, Opus 5, Sonnet 5
+## History window selector; pricing for Opus 5.5 and Mythos
 
-- **Three current models added to the pricing table.** Claude Fable 5.1
-  ($10/$50 per MTok, cache reads at $0.25), Claude Opus 5 ($5/$25) and
-  Claude Sonnet 5 ($2/$10). Opus 5 and Sonnet 5 sessions were previously
-  unrecognised and costed at Sonnet 4.6 rates, so Opus 5 sessions were
-  undercounted and Sonnet 5 sessions overcounted.
+- **Choose how far back the daily charts go.** A new dropdown next to the
+  "Billable only" toggle switches both the Daily Tokens and Equiv. API Cost
+  charts between 7, 14, 30, 60 and 90 days. The default stays at 14 days
+  and the choice is remembered across reloads. Longer windows use tighter
+  bars, hide per-bar values, and thin the date axis so 90 days stay
+  readable.
 
-- **Fable 5.1 cache reads no longer overpriced.** The model ID used to
-  prefix-match the Fable 5 row, which bills cache reads at $1.00 instead of
-  Fable 5.1's $0.25. Since long Claude Code sessions are dominated by cache
-  reads, Fable 5.1 session costs were inflated by roughly 40%. Model
-  matching now prefers the longest matching pricing key.
+- **Three models added to the pricing table.** Claude Opus 5.5 ($4/$20 per
+  MTok, cache reads at $0.20), Claude Mythos 5.1 (same rates as Fable 5.1)
+  and Claude Mythos 5 (same rates as Fable 5). Opus 5.5 sessions were
+  previously costed at Opus 5 rates through the prefix match, so they were
+  overcounted by about 20%.
 
-- **Family fallbacks track the current generation.** Unknown fable, opus and
-  sonnet IDs now resolve to Fable 5.1, Opus 5 and Sonnet 5 respectively.
+- **Mythos IDs fall back to Mythos 5.1.** Unrecognised mythos model IDs now
+  resolve to Mythos 5.1 pricing instead of Sonnet 5.
