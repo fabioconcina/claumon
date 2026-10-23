@@ -8,6 +8,13 @@ name: Release Extension
 # only if a `VSCE_PAT` secret is configured, so it silently no-ops until you add
 # one. The .vsix on the Release works in stock VS Code today via
 # "Extensions: Install from VSIX..." or `code --install-extension`.
+#
+# There is no VSCE_PAT: Azure DevOps (where the PAT would come from) needs a
+# paid Azure subscription, and global PATs stop working on 2026-12-01. The
+# Marketplace listing is updated by hand instead: download the .vsix from the
+# Release and upload it at
+# https://marketplace.visualstudio.com/manage/publishers/fabioconcina
+# (the extension's "..." menu > Update).
 on:
   push:
     tags:

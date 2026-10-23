@@ -164,15 +164,16 @@ the session/weekly breakdown, reset times, and the forecast detail.
 It is a **client only** and connects to a claumon server you are already running
 (default `127.0.0.1:3131`); it does not start or bundle claumon.
 
-Install it with one command (grabs the latest `.vsix` from GitHub and installs
-it via the `code` CLI):
+Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=fabioconcina.claumon)
+(search for **Claumon** in the Extensions view), or from the command line:
 
 ```bash
-curl -fsSL "$(curl -fsSL https://api.github.com/repos/fabioconcina/claumon/releases | grep -o 'https://github.com/[^"]*\.vsix' | head -1)" -o /tmp/claumon.vsix && code --install-extension /tmp/claumon.vsix
+code --install-extension fabioconcina.claumon
 ```
 
-On Windows, or for the manual "Install from VSIX..." steps, see
-[`extension/`](extension/), where source and build instructions also live.
+Each `ext-v*` release also has a `.vsix` for installing without the
+Marketplace; see [`extension/`](extension/), where source and build
+instructions also live.
 
 ## Self-update
 
