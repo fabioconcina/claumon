@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 - 2026-10-23
+
+### Changed
+
+- **Now on the VS Code Marketplace.** Install it from the Extensions view
+  by searching for **Claumon**; it updates automatically from now on.
+- **The "claumon is not running" panel says how to install claumon**, with
+  the Homebrew command and a download link, instead of assuming you already
+  have it.
+
 ## 0.4.1 - 2026-10-12
 
 ### Changed

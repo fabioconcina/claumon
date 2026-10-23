@@ -164,7 +164,8 @@ export class Dashboard {
   <div class="box">
     <h2>claumon is not running</h2>
     <p>Could not reach the claumon server at <code>${safeHost}:${safePort}</code>.</p>
-    <p>Start it (e.g. <code>./claumon</code>) and click Retry. The host/port can be changed in settings (<code>claumon.host</code> / <code>claumon.port</code>).</p>
+    <p>This extension needs the free claumon app running on your machine. Install it with <code>brew install fabioconcina/claumon/claumon</code> (or <a href="https://github.com/fabioconcina/claumon#quick-start">download it</a>), run <code>claumon</code>, then click Retry.</p>
+    <p>The host/port can be changed in settings (<code>claumon.host</code> / <code>claumon.port</code>).</p>
     <button id="retry">Retry</button>
   </div>
   <script nonce="${nonce}">

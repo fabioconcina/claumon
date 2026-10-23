@@ -1,8 +1,8 @@
 {
   "name": "claumon",
   "displayName": "Claumon",
-  "description": "Live Claude Code usage, cost, and session monitor in your status bar and a dashboard panel, powered by a running claumon server.",
-  "version": "0.4.1",
+  "description": "See where your Claude Code limits are headed before you hit them: live usage and a forecast in the status bar, plus the claumon dashboard in a panel. Requires the free claumon app.",
+  "version": "0.4.2",
   "publisher": "fabioconcina",
   "license": "MIT",
   "icon": "icon.png",
@@ -10,16 +10,29 @@
     "type": "git",
     "url": "https://github.com/fabioconcina/claumon.git"
   },
+  "homepage": "https://claumon.fabioconcina.com",
+  "bugs": {
+    "url": "https://github.com/fabioconcina/claumon/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "AI",
+    "Visualization",
     "Other"
   ],
   "keywords": [
     "claude",
     "claude code",
+    "claude-code",
+    "anthropic",
     "usage",
+    "usage limit",
+    "rate limit",
+    "forecast",
+    "tokens",
+    "cost",
     "monitor",
     "dashboard"
   ],
