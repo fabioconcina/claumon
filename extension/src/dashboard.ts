@@ -29,7 +29,7 @@ export class Dashboard {
   private constructor(extensionUri: vscode.Uri) {
     this.panel = vscode.window.createWebviewPanel(
       "claumonDashboard",
-      "Claumon Dashboard",
+      "claumon dashboard",
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -125,7 +125,7 @@ export class Dashboard {
   </style>
 </head>
 <body>
-  <iframe src="${safeUrl}/" title="Claumon"></iframe>
+  <iframe src="${safeUrl}/" title="claumon"></iframe>
 </body>
 </html>`;
   }

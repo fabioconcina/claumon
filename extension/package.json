@@ -1,8 +1,8 @@
 {
   "name": "claumon",
-  "displayName": "Claumon",
+  "displayName": "claumon: Claude Code Usage & Limits",
   "description": "See where your Claude Code limits are headed before you hit them: live usage and a forecast in the status bar, plus the claumon dashboard in a panel. Requires the free claumon app.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "fabioconcina",
   "license": "MIT",
   "icon": "icon.png",
@@ -43,22 +43,22 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "Claumon makes network requests to the configured host and embeds it in a webview, so it stays disabled until the workspace is trusted."
+      "description": "claumon makes network requests to the configured host and embeds it in a webview, so it stays disabled until the workspace is trusted."
     }
   },
   "contributes": {
     "commands": [
       {
         "command": "claumon.openDashboard",
-        "title": "Claumon: Open Dashboard"
+        "title": "claumon: Open Dashboard"
       },
       {
         "command": "claumon.reconnect",
-        "title": "Claumon: Reconnect"
+        "title": "claumon: Reconnect"
       }
     ],
     "configuration": {
-      "title": "Claumon",
+      "title": "claumon",
       "properties": {
         "claumon.host": {
           "type": "string",

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3 - 2026-10-23
+
+### Changed
+
+- **Lowercase "claumon" everywhere**, matching the app: the Marketplace
+  listing (now **claumon: Claude Code Usage & Limits**), the command palette
+  (**claumon: Open Dashboard**, **claumon: Reconnect**), the settings
+  section, the dashboard tab and the status bar tooltip.
+
 ## 0.4.2 - 2026-10-23
 
 ### Changed

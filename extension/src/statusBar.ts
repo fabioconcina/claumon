@@ -160,7 +160,7 @@ export class StatusBar {
 
   private buildTooltip(u: UsagePayload): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
-    md.appendMarkdown("**Claumon**\n\n");
+    md.appendMarkdown("**claumon**\n\n");
 
     const line = (label: string, pct?: number | null, reset?: string): string => {
       if (typeof pct !== "number") {

@@ -1,7 +1,7 @@
-# Claumon for VS Code
+# claumon for VS Code
 
 See where your Claude Code limits are headed before you hit them, without
-leaving VS Code. Claumon shows your live session and weekly usage in the status
+leaving VS Code. claumon shows your live session and weekly usage in the status
 bar, with a forecast of where you'll be when the window resets, and opens the
 full [claumon](https://github.com/fabioconcina/claumon) dashboard in an editor
 panel.
@@ -40,7 +40,7 @@ any Claude plan you sign in to with `claude /login`.
   current usage, and also turns yellow when the forecast projects you'll exceed
   the limit before the window resets, showing a flame icon while you're still
   on track to hit it.
-- **Dashboard panel** (`Claumon: Open Dashboard`) embedding the live claumon
+- **Dashboard panel** (`claumon: Open Dashboard`) embedding the live claumon
   dashboard: forecasts, session costs, history and the memory browser. If
   claumon isn't running, it shows how to start it and a Retry button.
 - Resilient connection: auto-reconnect with backoff, graceful "offline" state,
@@ -56,8 +56,8 @@ any Claude plan you sign in to with `claude /login`.
 
 ## Commands
 
-- **Claumon: Open Dashboard** : open the embedded dashboard panel.
-- **Claumon: Reconnect** : force a reconnect to the SSE stream and refresh.
+- **claumon: Open Dashboard** : open the embedded dashboard panel.
+- **claumon: Reconnect** : force a reconnect to the SSE stream and refresh.
 
 ## Requirements
 

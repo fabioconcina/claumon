@@ -165,7 +165,7 @@ It is a **client only** and connects to a claumon server you are already running
 (default `127.0.0.1:3131`); it does not start or bundle claumon.
 
 Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=fabioconcina.claumon)
-(search for **Claumon** in the Extensions view), or from the command line:
+(search for **claumon** in the Extensions view), or from the command line:
 
 ```bash
 code --install-extension fabioconcina.claumon
