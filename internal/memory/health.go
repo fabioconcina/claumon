@@ -44,14 +44,36 @@ const (
 var (
 	codeBlockRegex  = regexp.MustCompile("(?s)```[\\s\\S]*?```")
 	inlineCodeRegex = regexp.MustCompile("`[^`]+`")
-	whyBlockRegex   = regexp.MustCompile(`(?i)\*\*why[:\*]`)
-	howToApplyRegex = regexp.MustCompile(`(?i)\*\*how to apply[:\*]`)
+	whyBlockRegex   = regexp.MustCompile(`(?i)\*\*(why|por qu[eé])[:\*]`)
+	howToApplyRegex = regexp.MustCompile(`(?i)\*\*(how to apply|c[oó]mo aplicar(lo)?)[:\*]`)
 
 	// "Actionable language" — verbs/phrases that tell Claude what to do or not do.
-	actionRegex = regexp.MustCompile(`(?i)\b(always|never|must|don't|do not|prefer|avoid|instead|use|run|add|check|ensure|make sure|default to|before|after|when|if .+ then)\b`)
+	actionRegex = keywordRegex(
+		// English
+		`always`, `never`, `must`, `don't`, `do not`, `prefer`, `avoid`, `instead`, `use`, `run`, `add`, `check`,
+		`ensure`, `make sure`, `default to`, `before`, `after`, `when`, `if .+ then`,
+		// Spanish
+		`siempre`, `nunca`, `jam[aá]s`, `hay que`, `ten[eé]s que`, `tienes que`, `deben?`, `prefer[ií]`, `preferir`,
+		`evit[aá]`, `evitar`, `en (?:vez|lugar) de`, `us[aá]`, `usar`, `corr[eé]`, `correr`, `agreg[aá]`, `agregar`,
+		`verific[aá]`, `verificar`, `asegur[aá]te`, `por defecto`, `antes de`, `despu[eé]s de`, `cuando`, `si .+ entonces`,
+	)
 	// Scoping language — tells Claude *when* a rule applies.
-	scopeRegex = regexp.MustCompile(`(?i)\b(when|whenever|if|before|after|during|for .+ projects|in this repo|in this project|for refactors|for PRs|for tests)\b`)
+	scopeRegex = keywordRegex(
+		// English
+		`when`, `whenever`, `if`, `before`, `after`, `during`, `for .+ projects`, `in this repo`, `in this project`,
+		`for refactors`, `for PRs`, `for tests`,
+		// Spanish
+		`cuando`, `siempre que`, `si`, `ante`, `antes de`, `despu[eé]s de`, `durante`, `en este repo`,
+		`en este proyecto`, `para (?:los )?PRs`, `para (?:los )?tests`,
+	)
 )
+
+// keywordRegex matches any of the phrases as whole words, case-insensitively.
+// RE2's \b is ASCII-only, so the trailing boundary is explicit to let phrases end
+// in an accented letter (e.g. "jamás"); phrases must start with an ASCII letter.
+func keywordRegex(phrases ...string) *regexp.Regexp {
+	return regexp.MustCompile(`(?i)\b(?:` + strings.Join(phrases, "|") + `)(?:[^\p{L}\p{N}_]|$)`)
+}
 
 // ScoreHealth computes health scores for all memory files.
 func ScoreHealth(files []*MemoryFile) *HealthReport {
