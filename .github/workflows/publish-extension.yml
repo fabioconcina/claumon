@@ -38,11 +38,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # setup-node v4 only caches when `cache:` is set, which it isn't here.
-      # zizmor assumes v5+ auto-caching; revisit when Dependabot bumps to v5.
+      # No package cache: the published .vsix is built from a clean install
+      # rather than from a cache another workflow run could have written.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with: # zizmor: ignore[cache-poisoning]
+        with:
           node-version: "24"
+          package-manager-cache: false
 
       # Locked, reproducible install. .npmrc sets ignore-scripts=true, so no
       # dependency lifecycle scripts run in CI.
