@@ -92,6 +92,12 @@ files, and process controls are never exposed to the local network. For access
 from another machine, keep claumon on loopback and use an authenticated SSH
 tunnel or reverse proxy rather than publishing port 3131 directly.
 
+claumon also refuses requests whose `Host` header isn't `127.0.0.1`,
+`localhost`, or `[::1]`, which stops websites from reaching it through DNS
+rebinding. An SSH tunnel needs no changes. If your reverse proxy forwards the
+browser's original `Host` header, add that hostname to `allowed_hosts` in the
+[config](#configuration); otherwise the dashboard answers 403.
+
 claumon reads credentials from `~/.claude/.credentials.json` (created by `claude /login`), or falls back to the OS credential store (macOS Keychain, Linux secret-service via `secret-tool`, Windows Credential Manager) used by the VS Code extension. If credentials are missing, session tracking still works. Only the API usage gauges are unavailable.
 
 ### Command-line flags
@@ -286,7 +292,7 @@ Optional. Create `~/.claumon/config.json`:
 }
 ```
 
-All fields are optional. Defaults are shown above; claumon works without a config file. `retention_days` controls how long usage snapshots and daily aggregates are kept before being pruned. A `pricing_overrides` map can also be set to override per-model pricing, keyed by model ID with `input`, `output`, `cache_read`, `cache_write_5m`, and `cache_write_1h` USD-per-million-token rates.
+All fields are optional. Defaults are shown above; claumon works without a config file. `retention_days` controls how long usage snapshots and daily aggregates are kept before being pruned. `allowed_hosts` lists extra hostnames claumon answers to besides the loopback ones, for a reverse proxy that keeps the original `Host` header (e.g. `["claumon.example.com"]`). A `pricing_overrides` map can also be set to override per-model pricing, keyed by model ID with `input`, `output`, `cache_read`, `cache_write_5m`, and `cache_write_1h` USD-per-million-token rates.
 
 ## Data storage
 

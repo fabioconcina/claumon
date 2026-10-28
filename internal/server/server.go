@@ -2,9 +2,12 @@ package server
 
 import (
 	"io/fs"
+	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/fabioconcina/claumon/internal/store"
 )
@@ -15,7 +18,10 @@ type Server struct {
 	Handlers *Handlers
 }
 
-func New(claudeDir string, st *store.Store, webFS fs.FS) *Server {
+// New builds the dashboard server. allowedHosts lists extra hostnames the
+// server answers to besides loopback ones, for reverse proxies that forward
+// the browser's Host header unchanged.
+func New(claudeDir string, st *store.Store, webFS fs.FS, allowedHosts []string) *Server {
 	broker := NewBroker()
 	handlers := NewHandlers(claudeDir, st)
 
@@ -52,7 +58,7 @@ func New(claudeDir string, st *store.Store, webFS fs.FS) *Server {
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
 
 	return &Server{
-		Mux:      secureLocalRequests(mux),
+		Mux:      secureLocalRequests(mux, allowedHosts),
 		Broker:   broker,
 		Handlers: handlers,
 	}
@@ -60,13 +66,35 @@ func New(claudeDir string, st *store.Store, webFS fs.FS) *Server {
 
 // secureLocalRequests adds defense in depth around a server that is intended
 // to be used from its own origin. Direct non-browser clients remain supported,
-// but a web page from another origin cannot trigger process or file mutations.
-func secureLocalRequests(next http.Handler) http.Handler {
+// but a web page from another origin can neither read local data nor trigger
+// process or file mutations.
+func secureLocalRequests(next http.Handler, allowedHosts []string) http.Handler {
+	extra := make(map[string]bool, len(allowedHosts))
+	for _, h := range allowedHosts {
+		if name := hostName(h); name != "" {
+			extra[name] = true
+		}
+	}
+	var logRejectOnce sync.Once
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
+		}
+
+		// DNS rebinding: a hostile page can point its own domain at
+		// 127.0.0.1, which makes it same-origin with this server as far as the
+		// browser is concerned, so the Origin check below would pass. The Host
+		// header still carries the attacker's domain and a page cannot
+		// override it, so only names that really mean this machine get in.
+		if !hostAllowed(r.Host, extra) {
+			logRejectOnce.Do(func() {
+				log.Printf("[server] Rejected request for host %q (logged once). If this is your reverse proxy's hostname, add it to allowed_hosts in config.json", r.Host)
+			})
+			http.Error(w, "host not allowed: if this is your reverse proxy's hostname, add it to allowed_hosts in claumon's config.json", http.StatusForbidden)
+			return
 		}
 
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
@@ -110,6 +138,32 @@ func requestIsSameOrigin(r *http.Request) bool {
 		expectedHost = host
 	}
 	return strings.EqualFold(u.Scheme, expectedScheme) && strings.EqualFold(u.Host, expectedHost)
+}
+
+// hostAllowed reports whether a Host header names this machine: localhost,
+// a loopback IP literal, or one of the configured extra hostnames. IP
+// literals are safe to accept wholesale because DNS rebinding needs a domain
+// name the attacker controls.
+func hostAllowed(hostport string, extra map[string]bool) bool {
+	host := hostName(hostport)
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return extra[host]
+}
+
+// hostName returns the lowercase hostname of a Host header value, without
+// port, IPv6 brackets or trailing dot.
+func hostName(hostport string) string {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.Trim(host, "[]"), ".")
+	return strings.ToLower(host)
 }
 
 // forwardedValue returns the first element of a possibly comma-separated

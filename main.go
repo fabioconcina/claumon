@@ -43,6 +43,9 @@ type Config struct {
 	RetentionDays      int                             `json:"retention_days"`
 	PricingOverrides   map[string]pricing.ModelPricing `json:"pricing_overrides,omitempty"`
 	StuckThresholdMins int                             `json:"stuck_threshold_minutes"`
+	// Hostnames a reverse proxy forwards in the Host header. Loopback names
+	// are always accepted; anything else is refused (DNS-rebinding guard).
+	AllowedHosts []string `json:"allowed_hosts,omitempty"`
 }
 
 func defaultConfig() Config {
@@ -151,7 +154,7 @@ func main() {
 
 	// Setup HTTP server
 	webContent, _ := fs.Sub(webFS, "web")
-	srv := server.New(cfg.ClaudeDir, st, webContent)
+	srv := server.New(cfg.ClaudeDir, st, webContent, cfg.AllowedHosts)
 	srv.Handlers.AuthProvider = provider
 	srv.Handlers.Version = version
 	srv.Handlers.UpdateCommand = updater.UpdateCommand(service.RestartCommand())

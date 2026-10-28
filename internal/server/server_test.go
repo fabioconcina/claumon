@@ -29,6 +29,12 @@ func (emptyForecastStore) GetCompletedSessions(gauge string, before time.Time, l
 
 func setupTestServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
+	// httptest.NewRequest with a bare path sets Host to example.com.
+	return setupTestServerWithHosts(t, []string{"example.com"})
+}
+
+func setupTestServerWithHosts(t *testing.T, allowedHosts []string) (*Server, *store.Store) {
+	t.Helper()
 	dir := t.TempDir()
 	claudeDir := filepath.Join(dir, ".claude")
 	os.MkdirAll(filepath.Join(claudeDir, "projects"), 0755)
@@ -40,7 +46,7 @@ func setupTestServer(t *testing.T) (*Server, *store.Store) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	srv := New(claudeDir, st, os.DirFS(dir))
+	srv := New(claudeDir, st, os.DirFS(dir), allowedHosts)
 	return srv, st
 }
 
@@ -470,6 +476,67 @@ func TestMutationAllowsRequestsThroughReverseProxy(t *testing.T) {
 				t.Errorf("status = %d, want %d", w.Code, tt.wantCode)
 			}
 		})
+	}
+}
+
+// A DNS-rebinding page is same-origin with the server (its domain resolves to
+// 127.0.0.1), so Origin matches Host and only the Host check stops it.
+func TestRejectsDNSRebindingHosts(t *testing.T) {
+	srv, _ := setupTestServerWithHosts(t, nil)
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		host   string
+	}{
+		{name: "read session data", method: "GET", path: "/api/sessions", host: "attacker.example:3131"},
+		{name: "read dashboard page", method: "GET", path: "/", host: "attacker.example:3131"},
+		{name: "event stream", method: "GET", path: "/api/events", host: "attacker.example:3131"},
+		{name: "mutation with matching origin", method: "POST", path: "/api/memories/restore", host: "attacker.example:3131"},
+		{name: "trailing dot", method: "GET", path: "/api/sessions", host: "attacker.example.:3131"},
+		{name: "localhost lookalike", method: "GET", path: "/api/sessions", host: "localhost.attacker.example"},
+		{name: "empty host", method: "GET", path: "/api/sessions", host: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "http://127.0.0.1:3131"+tt.path, strings.NewReader(`{}`))
+			req.Host = tt.host
+			req.Header.Set("Origin", "http://"+tt.host)
+			w := httptest.NewRecorder()
+			srv.Mux.ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want 403", w.Code)
+			}
+		})
+	}
+}
+
+func TestAllowsLoopbackAndConfiguredHosts(t *testing.T) {
+	// Config entries are normalized the same way as Host headers.
+	srv, _ := setupTestServerWithHosts(t, []string{"Claumon.Example.com:443"})
+	for _, host := range []string{
+		"127.0.0.1:3131", "127.0.0.1", "localhost:3131", "LOCALHOST:3131",
+		"localhost.:3131", "[::1]:3131", "claumon.example.com",
+	} {
+		req := httptest.NewRequest("GET", "http://127.0.0.1:3131/api/info", nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		srv.Mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("host %q: status = %d, want 200", host, w.Code)
+		}
+	}
+
+	// A proxy that keeps the browser's Host: same-origin mutations reach the
+	// handler (400 for the empty body) instead of being refused.
+	req := httptest.NewRequest("POST", "http://127.0.0.1:3131/api/memories/delete", strings.NewReader(`{}`))
+	req.Host = "claumon.example.com"
+	req.Header.Set("Origin", "https://claumon.example.com")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	w := httptest.NewRecorder()
+	srv.Mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("proxied same-origin POST: status = %d, want handler response 400", w.Code)
 	}
 }
 
