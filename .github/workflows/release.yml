@@ -23,9 +23,12 @@ jobs:
 
       # No module/build cache: release binaries are built from a clean slate
       # rather than from a cache another workflow run could have written.
+      # check-latest: without it "1.26" means whatever patch the runner image
+      # has cached, which lagged the newest one (v0.21.3 shipped on 1.26.8).
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.26"
+          check-latest: true
           cache: false
 
       - name: Install Syft for release SBOMs

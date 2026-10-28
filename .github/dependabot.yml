@@ -29,6 +29,10 @@ updates:
       # the types are newer, and newer types would admit APIs older VS Code
       # builds don't have. Bump both together by hand.
       - dependency-name: "@types/vscode"
+      # Same reasoning: the Node types track the runtime the extension
+      # targets, not the newest Node. Minor and patch updates still flow.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
