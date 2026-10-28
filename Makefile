@@ -1,4 +1,5 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# --match: skip the VS Code extension's ext-v* tags, which share this repo.
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 
 .PHONY: build build-benchtools test vet clean docs
 
