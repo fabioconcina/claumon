@@ -54,8 +54,10 @@ jobs:
         run: npm run typecheck
 
       # Builds claumon-<version>.vsix (runs vscode:prepublish -> tsc first).
+      # vsce is pinned to an exact version (npm never reuses one), since it
+      # runs in a job holding a contents:write token. Bump by hand.
       - name: Package VSIX
-        run: npx --yes @vscode/vsce@^3.0.0 package
+        run: npx --yes @vscode/vsce@3.9.2 package
 
       # Always available for download, including on manual-dispatch runs.
       - name: Upload workflow artifact
@@ -90,4 +92,4 @@ jobs:
       # Reuses the already-built .vsix so nothing is rebuilt.
       - name: Publish to VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' }}
-        run: npx --yes @vscode/vsce@^3.0.0 publish --packagePath ./*.vsix --pat "$VSCE_PAT"
+        run: npx --yes @vscode/vsce@3.9.2 publish --packagePath ./*.vsix --pat "$VSCE_PAT"
