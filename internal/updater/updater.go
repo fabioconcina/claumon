@@ -207,19 +207,12 @@ func Update(rel *Release) (string, error) {
 }
 
 // verifyChecksum downloads the checksums file from the release and verifies
-// the SHA256 of the downloaded binary. Skips verification if no checksums
-// asset is present in the release.
+// the SHA256 of the downloaded binary. Every release publishes checksums.txt,
+// so a release without one is treated as broken, not as unverifiable.
 func verifyChecksum(rel *Release, asset, filePath string) error {
-	var checksumURL string
-	for _, a := range rel.Assets {
-		if strings.Contains(a.Name, "checksums") {
-			checksumURL = a.BrowserDownloadURL
-			break
-		}
-	}
+	checksumURL := checksumAssetURL(rel)
 	if checksumURL == "" {
-		log.Printf("[update] No checksum file in release, skipping verification")
-		return nil
+		return fmt.Errorf("release %s has no checksums file; refusing to install an unverified binary", rel.TagName)
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
@@ -264,6 +257,17 @@ func verifyChecksum(rel *Release, asset, filePath string) error {
 
 	log.Printf("[update] Checksum verified (%s)", expected[:12])
 	return nil
+}
+
+// checksumAssetURL returns the download URL of the release's checksums file,
+// or "" if it has none.
+func checksumAssetURL(rel *Release) string {
+	for _, a := range rel.Assets {
+		if strings.Contains(a.Name, "checksums") {
+			return a.BrowserDownloadURL
+		}
+	}
+	return ""
 }
 
 func copyFile(src, dst string) error {

@@ -1,7 +1,15 @@
 package updater
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +85,54 @@ func TestNeedsUpdate(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("NeedsUpdate(%q, %q) = %v, want %v", tt.current, tt.latest, got, tt.want)
 		}
+	}
+}
+
+func TestVerifyChecksum(t *testing.T) {
+	binary := []byte("claumon binary")
+	path := filepath.Join(t.TempDir(), "claumon")
+	if err := os.WriteFile(path, binary, 0644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(binary)
+	good := hex.EncodeToString(sum[:])
+	bad := strings.Repeat("0", len(good))
+	asset := "claumon-linux-amd64"
+
+	tests := []struct {
+		name      string
+		checksums string // "" means the release has no checksums asset
+		wantErr   string
+	}{
+		{name: "match", checksums: good + "  " + asset + "\n"},
+		{name: "mismatch", checksums: bad + "  " + asset + "\n", wantErr: "checksum mismatch"},
+		{name: "asset not listed", checksums: good + "  claumon-darwin-arm64\n", wantErr: "no checksum found"},
+		{name: "no checksums file", wantErr: "no checksums file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rel := &Release{TagName: "v9.9.9"}
+			if tt.checksums != "" {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fmt.Fprint(w, tt.checksums)
+				}))
+				defer srv.Close()
+				rel.Assets = append(rel.Assets, struct {
+					Name               string `json:"name"`
+					BrowserDownloadURL string `json:"browser_download_url"`
+				}{Name: "checksums.txt", BrowserDownloadURL: srv.URL})
+			}
+
+			err := verifyChecksum(rel, asset, path)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("verifyChecksum() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("verifyChecksum() = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }
