@@ -6,6 +6,9 @@ name: Check Homebrew tap token
 on:
   workflow_dispatch:
 
+# Uses only the tap PAT below, never the workflow's own GITHUB_TOKEN.
+permissions: {}
+
 jobs:
   check:
     runs-on: ubuntu-latest

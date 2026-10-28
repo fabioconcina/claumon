@@ -1,0 +1,69 @@
+name: Security
+
+# Known-vulnerability and workflow-hardening checks. The weekly run matters:
+# new advisories land against unchanged code, so a quiet repo still needs a
+# re-scan. A failed scheduled run emails whoever last edited the cron line.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Same toolchain line as ci.yml and release.yml, so standard-library
+      # advisories are checked against what actually ships.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26"
+
+      # Reachability-aware: only fails when our code calls a vulnerable symbol.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Audits .github/ (workflows + dependabot.yml) for unpinned actions,
+      # excessive permissions, template injection, credential persistence.
+      # The token enables the online audits (known-vulnerable actions,
+      # impostor commits).
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pipx run zizmor==1.31.1 --format=github .github/
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      # The extension has no runtime deps, so this covers the build toolchain
+      # (typescript, type packages) that runs in CI and on release.
+      - name: npm audit
+        run: npm audit --audit-level=moderate

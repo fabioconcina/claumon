@@ -14,16 +14,22 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      # goreleaser publishes through the GitHub API with explicit tokens, so
+      # the checkout doesn't need to leave git credentials on disk.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      # No module/build cache: release binaries are built from a clean slate
+      # rather than from a cache another workflow run could have written.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.26"
+          cache: false
 
       - name: Install Syft for release SBOMs
-        uses: anchore/sbom-action/download-syft@v0
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
 
       - name: Read release notes
         id: notes
@@ -33,10 +39,10 @@ jobs:
             cat RELEASE_NOTES.md >> "$GITHUB_ENV"
             echo "EOF" >> "$GITHUB_ENV"
           else
-            echo "RELEASE_NOTES=Release ${{ github.ref_name }}" >> "$GITHUB_ENV"
+            echo "RELEASE_NOTES=Release ${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
           fi
 
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: "~> v2"
           args: release --clean
@@ -46,6 +52,6 @@ jobs:
           RELEASE_NOTES: ${{ env.RELEASE_NOTES }}
 
       - name: Attest release artifacts
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
