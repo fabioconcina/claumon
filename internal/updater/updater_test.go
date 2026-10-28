@@ -79,6 +79,11 @@ func TestNeedsUpdate(t *testing.T) {
 		{"0.7.1", "v0.7.1", false},
 		{"dev", "v0.8.0", false},
 		{"v0.7.0", "v0.7.1", true},
+		// Local builds (git describe) compare by the tag they were built on.
+		{"v0.7.1-13-gbcbebe6", "v0.7.1", false},
+		{"v0.7.1-13-gbcbebe6-dirty", "v0.7.1", false},
+		{"v0.7.1-dirty", "v0.7.1", false},
+		{"v0.7.1-13-gbcbebe6", "v0.8.0", true},
 	}
 	for _, tt := range tests {
 		got := NeedsUpdate(tt.current, tt.latest)

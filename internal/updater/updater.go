@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -105,9 +106,15 @@ func AssetName() string {
 	return name
 }
 
-// NeedsUpdate returns true if the latest version differs from current.
+// describeSuffix matches what git describe appends to the nearest tag in a
+// local build: commits since the tag, the commit hash, and a dirty marker.
+var describeSuffix = regexp.MustCompile(`(-\d+-g[0-9a-f]+)?(-dirty)?$`)
+
+// NeedsUpdate returns true if the latest version differs from current. A
+// local build is compared by the tag it was built on, so a build ahead of the
+// latest release isn't offered that release as an "update".
 func NeedsUpdate(current, latest string) bool {
-	current = strings.TrimPrefix(current, "v")
+	current = describeSuffix.ReplaceAllString(strings.TrimPrefix(current, "v"), "")
 	latest = strings.TrimPrefix(latest, "v")
 	return current != latest && current != "dev"
 }
