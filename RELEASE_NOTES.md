@@ -1,31 +1,38 @@
-## Token and cost totals were counted about twice
+## Hardening against DNS rebinding
 
-- **Fixed: tokens and costs were overcounted.** Claude Code logs each part
-  of a response (thinking, text, each tool call) as its own line, and every
-  line repeats the usage for the whole response. claumon added up every
-  line, so token counts and estimated costs were about 2x too high. Each
-  response is now counted once. This affected the sessions table, Today,
-  History and the hourly heatmap since the first release. Thanks to
-  @baronazael for finding and fixing it (#2).
+- **The dashboard now only answers requests addressed to your machine.**
+  DNS rebinding is a known technique against apps that serve a local web
+  page: a specially crafted website points its own domain at 127.0.0.1 so
+  the browser treats it as the local app. While such a page was open in a
+  browser without local-network protection, it could read what the
+  dashboard shows (sessions, memory files) and trigger its actions, such as
+  interrupting a session. claumon now accepts only requests addressed to
+  `localhost` or a loopback IP, which closes this off. Recent Chrome
+  versions likely blocked it already. Updating is recommended.
 
-- **Rate-limit gauges and forecasts were never affected.** They come from
-  Anthropic's usage API, not from session logs.
+- **If you reach claumon through a reverse proxy:** proxies that forward the
+  browser's original `Host` header now get a 403 that tells you what to do.
+  Add the hostname to the new `allowed_hosts` list in
+  `~/.claumon/config.json`, e.g. `"allowed_hosts": ["claumon.example.com"]`.
+  SSH tunnels, proxies that rewrite the Host to 127.0.0.1, and the VS Code
+  extension need no changes.
 
-- **What you'll see after updating:** token and cost numbers drop by about
-  half. At startup claumon rebuilds daily history for every day whose
-  session files are still on disk. Older days stay overcounted until they
-  age out of the retention window, so the History chart may show a drop
-  where your oldest session files begin.
+- **Built with the newest Go 1.26 patch.** v0.21.3 was built with Go
+  1.26.8, which lacks the fix for GO-2026-6809 in certificate verification
+  (`crypto/x509`), used by claumon's HTTPS connections to Anthropic and
+  GitHub. Release builds now always use the latest 1.26 patch.
 
-- **History no longer skips days after a restart.** The startup rebuild ran
-  alongside other startup work that also writes to claumon's database, and
-  some days could fail with "database is locked" and keep stale numbers.
-  Writes now wait for each other, so every day gets rebuilt.
+- **`claumon update` refuses unverified downloads.** If a release had no
+  checksums file, the self-updater installed the binary without checking
+  it. It now stops instead.
 
-- **Homebrew updates now restart claumon.** If you run claumon as a
-  background service, the update command in the dashboard now restarts it
-  after `brew upgrade`. Before, the service kept running the old version,
-  and on macOS it could end up stopped. For this update, restart it
-  yourself if claumon doesn't come back:
-  `launchctl kickstart -k gui/$(id -u)/com.claumon.dashboard` (macOS) or
-  `systemctl --user restart claumon` (Linux).
+- **GitHub link in the dashboard.** The top bar links to the project on
+  GitHub, for release notes and issues. It's hidden in the VS Code panel,
+  where links don't open.
+
+- **Building from source no longer offers a downgrade.** A local build newer
+  than the latest release showed that release as "available", and
+  `claumon update` would have installed it.
+
+- **Reporting security issues:** there is now a private channel, see
+  [SECURITY.md](https://github.com/fabioconcina/claumon/blob/main/SECURITY.md).
