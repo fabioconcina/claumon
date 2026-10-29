@@ -297,6 +297,7 @@ func enumerateSessionFiles(claudeDir string) ([]sessionFile, error) {
 	summaryCache.prune(files)
 	dailyCache.prune(files)
 	hourlyCache.prune(files)
+	costEventCache.prune(files)
 
 	return files, nil
 }
