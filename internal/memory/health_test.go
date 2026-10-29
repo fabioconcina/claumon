@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"regexp"
 	"testing"
 	"time"
 )
@@ -136,6 +137,18 @@ func TestScoreSpecificity(t *testing.T) {
 			"When deploying alertpaca, always bump the version before building",
 			20,
 		},
+		{
+			"spanish scoped rule",
+			"Cuando despliegues alertpaca, siempre subí la versión antes de compilar",
+			"Cuando despliegues alertpaca, siempre subí la versión antes de compilar",
+			20,
+		},
+		{
+			"spanish with why/how structure",
+			"Nunca mockees la base en los tests.\n\n**Por qué:** los mocks divergieron de prod.\n\n**Cómo aplicarlo:** cuando escribas tests de integración, usá una base real.",
+			"---\ntype: feedback\n---\nNunca mockees la base en los tests.\n\n**Por qué:** los mocks divergieron de prod.\n\n**Cómo aplicarlo:** cuando escribas tests de integración, usá una base real.",
+			50,
+		},
 	}
 
 	for _, tt := range tests {
@@ -246,6 +259,31 @@ func TestScoreHealthFullPipeline(t *testing.T) {
 
 	if report.AverageScore <= 0 {
 		t.Error("average score should be positive")
+	}
+}
+
+func TestKeywordRegexes(t *testing.T) {
+	tests := []struct {
+		name  string
+		re    *regexp.Regexp
+		text  string
+		count int
+	}{
+		{"english actions", actionRegex, "Always prefer one bundled PR", 2},
+		{"spanish actions", actionRegex, "Siempre usá el template; jamás lo inventes.", 3},
+		{"accent-ending word at end of text", actionRegex, "eso no se toca jamás", 1},
+		{"no match inside a longer word", actionRegex, "usábamos otra cosa, nunqueta", 0},
+		{"english scope", scopeRegex, "Run it before deploying, if needed", 2},
+		{"spanish scope", scopeRegex, "Ante un check rojo, y si hace falta, después de pushear", 3},
+		{"no scope", scopeRegex, "Some general thoughts about things", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := len(tt.re.FindAllString(tt.text, -1)); got != tt.count {
+				t.Errorf("matches = %d, want %d (%q)", got, tt.count, tt.re.FindAllString(tt.text, -1))
+			}
+		})
 	}
 }
 
