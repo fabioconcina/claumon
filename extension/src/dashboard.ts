@@ -34,6 +34,12 @@ export class Dashboard {
       { enableScripts: true, retainContextWhenHidden: true },
     );
     this.panel.iconPath = vscode.Uri.joinPath(extensionUri, "icon.png");
+    // A hidden panel stays loaded (retainContextWhenHidden), so its page is
+    // told when it is out of sight and lets go of its live connection
+    // (VS Code's webviews share the browser's six connections per address).
+    this.panel.onDidChangeViewState((e) => {
+      void this.panel.webview.postMessage({ type: "visibility", visible: e.webviewPanel.visible });
+    });
     this.panel.onDidDispose(() => {
       this.disposed = true;
       Dashboard.current = undefined;
@@ -109,11 +115,15 @@ export class Dashboard {
     // lands in the CSP content attribute and the iframe src so a stray quote
     // or angle bracket can't break out of the attribute or inject a directive.
     const safeUrl = escapeHtml(url);
+    const nonce = makeNonce();
     const csp = [
       "default-src 'none'",
       `frame-src ${safeUrl}`,
       "style-src 'unsafe-inline'",
+      `script-src 'nonce-${nonce}'`,
     ].join("; ");
+    // Passes the panel's visibility on to the page, to the claumon origin only.
+    const origin = JSON.stringify(new URL(url).origin).replace(/</g, "\\u003c");
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,7 +135,16 @@ export class Dashboard {
   </style>
 </head>
 <body>
-  <iframe src="${safeUrl}/" title="claumon"></iframe>
+  <iframe id="page" src="${safeUrl}/" title="claumon"></iframe>
+  <script nonce="${nonce}">
+    const frame = document.getElementById('page');
+    const origin = ${origin};
+    window.addEventListener('message', (e) => {
+      if (e.source !== frame.contentWindow && e.data && e.data.type === 'visibility') {
+        frame.contentWindow.postMessage({ type: 'claumon:visible', visible: !!e.data.visible }, origin);
+      }
+    });
+  </script>
 </body>
 </html>`;
   }

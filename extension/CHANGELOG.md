@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A dashboard panel in a background tab now lets go of its live connection
+  to claumon, and takes it back when you return to it. VS Code's panels
+  share six connections per address, so several open dashboards could leave
+  one of them waiting for updates. Needs the next claumon release; older
+  versions keep the connection open as before.
+
 ## 0.4.3 - 2026-10-23
 
 ### Changed

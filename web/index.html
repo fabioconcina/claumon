@@ -2959,8 +2959,34 @@ function showAuthBanner(status, message) {
 }
 
 // --- SSE ---
+// The stream is held only while the page is in sight: a browser allows six
+// connections per address, shared by every tab and VS Code panel, and a
+// forgotten dashboard tab would otherwise keep the others waiting.
+// Out of sight for 15 s it lets go; back in sight it reconnects and refetches.
+let sseSource = null, sseHideTimer = null, pageHidden = false;
+function setPageHidden(hidden) {
+  if (hidden === pageHidden) return;
+  pageHidden = hidden;
+  clearTimeout(sseHideTimer);
+  if (hidden) {
+    sseHideTimer = setTimeout(() => {
+      if (pageHidden && sseSource) { sseSource.close(); sseSource = null; }
+    }, 15000);
+  } else if (!sseSource) {
+    connectSSE();
+  }
+}
+document.addEventListener('visibilitychange', () => setPageHidden(document.hidden));
+// In VS Code a hidden panel stays loaded: the extension says when it is.
+window.addEventListener('message', e => {
+  if (e.source === window.parent && e.data && e.data.type === 'claumon:visible') setPageHidden(!e.data.visible);
+});
+
 function connectSSE() {
+  if (pageHidden) return;
+  if (sseSource) sseSource.close();
   const es = new EventSource('/api/events');
+  sseSource = es;
 
   es.onopen = () => {
     sseConnected = true;
@@ -2978,10 +3004,11 @@ function connectSSE() {
     dot.classList.remove('connected');
     dot.title = 'SSE disconnected';
     document.getElementById('connStatus').textContent = 'Reconnecting...';
-    if (es.readyState === EventSource.CLOSED) {
+    if (es.readyState === EventSource.CLOSED && sseSource === es) {
+      sseSource = null;
       const delay = Math.min(sseRetryDelay * 1000, 60000);
       sseRetryDelay = Math.min(sseRetryDelay * 2, 60);
-      setTimeout(connectSSE, delay);
+      setTimeout(() => { if (!sseSource) connectSSE(); }, delay);
     }
   };
 
