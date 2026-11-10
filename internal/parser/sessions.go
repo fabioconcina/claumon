@@ -215,7 +215,7 @@ func costFor(model string, in, out, cacheRead, cacheCreate int) float64 {
 		if _, warned := warnedModels.LoadOrStore(model, true); !warned {
 			log.Printf("[pricing] Unknown model %q — using sonnet pricing. Update pricing.json?", model)
 		}
-		p, _ = pricingTable.Get("claude-sonnet-5")
+		p, _ = pricingTable.Get("claude-sonnet-5-5")
 	}
 	return float64(in)/1e6*p.Input +
 		float64(out)/1e6*p.Output +
@@ -225,11 +225,11 @@ func costFor(model string, in, out, cacheRead, cacheCreate int) float64 {
 
 func normalizeModel(model string) string {
 	if pricingTable == nil {
-		return "claude-sonnet-5"
+		return "claude-sonnet-5-5"
 	}
 
 	// Strip date suffixes like "claude-sonnet-4-6-20250514". Prefer the
-	// longest matching key so "claude-fable-5-1" resolves to itself rather
+	// longest matching key so "claude-fable-5-2" resolves to itself rather
 	// than to the "claude-fable-5" prefix.
 	best := ""
 	for key := range pricingTable.Models() {
@@ -243,15 +243,15 @@ func normalizeModel(model string) string {
 	// Try matching by family: pick the latest known model in each family
 	switch {
 	case strings.Contains(model, "fable"):
-		return "claude-fable-5-1"
+		return "claude-fable-5-2"
 	case strings.Contains(model, "mythos"):
-		return "claude-mythos-5-1"
+		return "claude-mythos-5-2"
 	case strings.Contains(model, "opus"):
-		return "claude-opus-5"
+		return "claude-opus-5-5"
 	case strings.Contains(model, "haiku"):
-		return "claude-haiku-4-5"
+		return "claude-haiku-5-5"
 	default:
-		return "claude-sonnet-5"
+		return "claude-sonnet-5-5"
 	}
 }
 
