@@ -94,6 +94,16 @@ func TestEstimateCost(t *testing.T) {
 			want: 0.3 + 0.75 + 0.06 + 0.0375,
 		},
 		{
+			name: "1-hour cache writes at the 1-hour rate",
+			summary: SessionSummary{
+				Model:             "claude-opus-5-5",
+				CacheCreateTokens: 1_000_000,
+				cacheCreate1h:     600_000,
+			},
+			// 0.4M * $5 (5-minute) + 0.6M * $8 (1-hour)
+			want: 2.0 + 4.8,
+		},
+		{
 			name: "zero tokens",
 			summary: SessionSummary{
 				Model: "claude-sonnet-4-6",

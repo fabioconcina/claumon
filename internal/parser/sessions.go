@@ -47,6 +47,10 @@ type SessionSummary struct {
 	IsStuck         bool      `json:"is_stuck"`
 	PID             int       `json:"pid,omitempty"`
 	IdleMinutes     float64   `json:"idle_minutes,omitempty"`
+
+	// cacheCreate1h is the part of CacheCreateTokens written with the 1-hour
+	// cache lifetime, which is billed at a higher rate.
+	cacheCreate1h int
 }
 
 // SessionMessage represents a single parsed message from a session for the detail view.
@@ -84,12 +88,7 @@ type jsonlLine struct {
 		Model   string `json:"model"`
 		Role    string `json:"role"`
 		Content json.RawMessage `json:"content,omitempty"`
-		Usage   *struct {
-			InputTokens              int `json:"input_tokens"`
-			OutputTokens             int `json:"output_tokens"`
-			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-		} `json:"usage,omitempty"`
+		Usage   *usage          `json:"usage,omitempty"`
 	} `json:"message,omitempty"`
 	Title string `json:"title,omitempty"`
 }
@@ -178,6 +177,7 @@ func ParseSessionFile(path string) (*SessionSummary, error) {
 		summary.OutputTokens += r.Output
 		summary.CacheReadTokens += r.CacheRead
 		summary.CacheCreateTokens += r.CacheCreate
+		summary.cacheCreate1h += r.CacheCreate1h
 	}
 
 	// Fallback title: first user message, stripped of XML tags, truncated
@@ -199,13 +199,15 @@ func SetPricingTable(t *pricing.Table) {
 }
 
 func estimateCost(s *SessionSummary) float64 {
-	cost := costFor(s.Model, s.InputTokens, s.OutputTokens, s.CacheReadTokens, s.CacheCreateTokens)
+	cost := costFor(s.Model, s.InputTokens, s.OutputTokens, s.CacheReadTokens, s.CacheCreateTokens, s.cacheCreate1h)
 	return math.Round(cost*10000) / 10000
 }
 
 // costFor returns the unrounded USD cost for the given token mix under the
-// given model's pricing. Returns 0 if pricing is unavailable.
-func costFor(model string, in, out, cacheRead, cacheCreate int) float64 {
+// given model's pricing. cacheCreate counts all cache-write tokens and
+// cacheCreate1h the part of them written with the 1-hour lifetime; the rest
+// are priced as 5-minute writes. Returns 0 if pricing is unavailable.
+func costFor(model string, in, out, cacheRead, cacheCreate, cacheCreate1h int) float64 {
 	if pricingTable == nil {
 		return 0
 	}
@@ -220,7 +222,8 @@ func costFor(model string, in, out, cacheRead, cacheCreate int) float64 {
 	return float64(in)/1e6*p.Input +
 		float64(out)/1e6*p.Output +
 		float64(cacheRead)/1e6*p.CacheRead +
-		float64(cacheCreate)/1e6*p.CacheWrite5m
+		float64(cacheCreate-cacheCreate1h)/1e6*p.CacheWrite5m +
+		float64(cacheCreate1h)/1e6*p.CacheWrite1h
 }
 
 func normalizeModel(model string) string {
@@ -554,7 +557,7 @@ func ParseSessionFileDaily(path string) (map[string]*SessionAggregate, error) {
 		b.OutputTokens += r.Output
 		b.CacheReadTokens += r.CacheRead
 		b.CacheCreateTokens += r.CacheCreate
-		b.CostUSD += costFor(r.Model, r.Input, r.Output, r.CacheRead, r.CacheCreate)
+		b.CostUSD += costFor(r.Model, r.Input, r.Output, r.CacheRead, r.CacheCreate, r.CacheCreate1h)
 	}
 
 	for date, b := range buckets {

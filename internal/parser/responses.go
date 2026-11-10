@@ -2,14 +2,37 @@ package parser
 
 import "time"
 
+// usage is the token usage Claude Code logs on each assistant line.
+type usage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	// CacheCreation splits CacheCreationInputTokens by cache lifetime.
+	CacheCreation *struct {
+		Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation,omitempty"`
+}
+
+// cacheCreate1h returns how many of the cache-write tokens used the 1-hour
+// lifetime, which costs more than the default 5 minutes. Lines without the
+// split count as all 5-minute writes.
+func (u *usage) cacheCreate1h() int {
+	if u.CacheCreation == nil {
+		return 0
+	}
+	return max(0, min(u.CacheCreation.Ephemeral1hInputTokens, u.CacheCreationInputTokens))
+}
+
 // apiResponse is the token usage of one assistant API response.
 type apiResponse struct {
-	Time        time.Time
-	Model       string
-	Input       int
-	Output      int
-	CacheRead   int
-	CacheCreate int
+	Time          time.Time
+	Model         string
+	Input         int
+	Output        int
+	CacheRead     int
+	CacheCreate   int // all cache writes
+	CacheCreate1h int // the part of CacheCreate written with the 1-hour lifetime
 }
 
 // responseLog collects one entry per assistant API response in a session
@@ -29,12 +52,13 @@ func (l *responseLog) add(entry *jsonlLine) {
 	}
 	u := entry.Message.Usage
 	r := apiResponse{
-		Time:        entry.Timestamp,
-		Model:       entry.Message.Model,
-		Input:       u.InputTokens,
-		Output:      u.OutputTokens,
-		CacheRead:   u.CacheReadInputTokens,
-		CacheCreate: u.CacheCreationInputTokens,
+		Time:          entry.Timestamp,
+		Model:         entry.Message.Model,
+		Input:         u.InputTokens,
+		Output:        u.OutputTokens,
+		CacheRead:     u.CacheReadInputTokens,
+		CacheCreate:   u.CacheCreationInputTokens,
+		CacheCreate1h: u.cacheCreate1h(),
 	}
 	id := entry.Message.ID
 	if id == "" {
