@@ -336,3 +336,58 @@ func TestConcurrentWritesWaitForLock(t *testing.T) {
 		t.Errorf("%d of %d concurrent writes failed", failed, writers*writes)
 	}
 }
+
+func TestGetGaugeSnapshots(t *testing.T) {
+	st := openTestStore(t)
+	farFuture := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	insert := func(ts string, sessionPct, weeklyPct float64, sessionReset string) {
+		t.Helper()
+		_, err := st.db.Exec(`INSERT INTO usage_snapshots (timestamp, session_pct, weekly_pct, session_reset_at, weekly_reset_at, raw_json)
+			VALUES (?, ?, ?, ?, ?, '{}')`, ts, sessionPct, weeklyPct, sessionReset, "2026-03-25T00:00:00Z")
+		if err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+	insert("2026-03-20 09:00:00", 5, 1, "2026-03-20T13:00:00Z")
+	insert("2026-03-20 10:02:00", 12, 2, "2026-03-20T13:00:00Z")
+	insert("2026-03-20 10:00:00", 10, 2, "2026-03-20T13:00:00Z")
+	insert("2026-03-20 10:04:00", 0, 2, "")
+
+	got, err := st.GetGaugeSnapshots("session", time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC), farFuture)
+	if err != nil {
+		t.Fatalf("GetGaugeSnapshots: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d snapshots, want 3", len(got))
+	}
+	if got[0].Pct != 10 || got[1].Pct != 12 {
+		t.Errorf("snapshots not in time order: %+v", got)
+	}
+	if got[0].ResetAt != "2026-03-20T13:00:00Z" || got[2].ResetAt != "" {
+		t.Errorf("unexpected reset_at values: %+v", got)
+	}
+	if !got[0].Time.Equal(time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("got[0].Time = %v", got[0].Time)
+	}
+
+	weekly, err := st.GetGaugeSnapshots("weekly", time.Time{}, farFuture)
+	if err != nil {
+		t.Fatalf("GetGaugeSnapshots weekly: %v", err)
+	}
+	if len(weekly) != 4 || weekly[0].Pct != 1 {
+		t.Errorf("weekly = %+v", weekly)
+	}
+
+	upTo, err := st.GetGaugeSnapshots("session", time.Time{}, time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("GetGaugeSnapshots until: %v", err)
+	}
+	if len(upTo) != 2 || upTo[1].Pct != 10 {
+		t.Errorf("until bound not applied: %+v", upTo)
+	}
+
+	if _, err := st.GetGaugeSnapshots("bogus", time.Time{}, farFuture); err == nil {
+		t.Error("expected error for unknown gauge")
+	}
+}

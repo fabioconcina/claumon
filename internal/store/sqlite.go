@@ -180,6 +180,48 @@ func (s *Store) LatestSnapshotTime() (t time.Time, ok bool, err error) {
 	return t, true, nil
 }
 
+// GaugeSnapshot is one stored poll of a single gauge.
+type GaugeSnapshot struct {
+	Time    time.Time
+	Pct     float64
+	ResetAt string // canonical reset_at, empty when no window was active
+}
+
+// GetGaugeSnapshots returns the snapshots of the given gauge ("session" or
+// "weekly") taken in [since, until], in ascending time order.
+func (s *Store) GetGaugeSnapshots(gauge string, since, until time.Time) ([]GaugeSnapshot, error) {
+	pctCol, resetCol, err := gaugeColumns(gauge)
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf(`SELECT timestamp, COALESCE(%s, 0), COALESCE(%s, '') FROM usage_snapshots
+		WHERE timestamp >= ? AND timestamp <= ?
+		ORDER BY timestamp ASC`, pctCol, resetCol)
+	const layout = "2006-01-02 15:04:05"
+	rows, err := s.db.Query(q, since.UTC().Format(layout), until.UTC().Format(layout))
+	if err != nil {
+		return nil, fmt.Errorf("query gauge snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	var out []GaugeSnapshot
+	for rows.Next() {
+		var ts string
+		var snap GaugeSnapshot
+		if err := rows.Scan(&ts, &snap.Pct, &snap.ResetAt); err != nil {
+			return nil, fmt.Errorf("scan gauge snapshot: %w", err)
+		}
+		t, err := parseSnapshotTime(ts)
+		if err != nil {
+			continue
+		}
+		snap.Time = t
+		out = append(out, snap)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpsertDailyAggregate(agg DailyAggregate) error {
 	_, err := s.db.Exec(`
 		INSERT INTO daily_aggregates (date, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, cost_usd, session_count, message_count)
