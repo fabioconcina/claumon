@@ -274,7 +274,8 @@ func TestKeywordRegexes(t *testing.T) {
 		{"accent-ending word at end of text", actionRegex, "eso no se toca jamás", 1},
 		{"no match inside a longer word", actionRegex, "usábamos otra cosa, nunqueta", 0},
 		{"english scope", scopeRegex, "Run it before deploying, if needed", 2},
-		{"spanish scope", scopeRegex, "Ante un check rojo, y si hace falta, después de pushear", 3},
+		{"spanish scope", scopeRegex, "Ante un check rojo, y si hace falta, después de pushear", 2},
+		{"italian pronoun si is not a condition", scopeRegex, "Il progetto si chiama claumon", 0},
 		{"no scope", scopeRegex, "Some general thoughts about things", 0},
 	}
 

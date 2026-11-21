@@ -63,7 +63,7 @@ var (
 		`when`, `whenever`, `if`, `before`, `after`, `during`, `for .+ projects`, `in this repo`, `in this project`,
 		`for refactors`, `for PRs`, `for tests`,
 		// Spanish
-		`cuando`, `siempre que`, `si`, `ante`, `antes de`, `despu[eé]s de`, `durante`, `en este repo`,
+		`cuando`, `siempre que`, `ante`, `antes de`, `despu[eé]s de`, `durante`, `en este repo`,
 		`en este proyecto`, `para (?:los )?PRs`, `para (?:los )?tests`,
 	)
 )
